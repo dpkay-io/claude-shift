@@ -1,4 +1,6 @@
+import path from 'node:path';
 import { logPing } from '../logger/index.js';
+import { resolveExePath } from '../utils/claude-check.js';
 
 export interface PingResult {
   success: boolean;
@@ -16,12 +18,13 @@ function validatePath(p: string): void {
 
 export async function executePing(claudePath: string, message: string, triggerId: string = 'manual'): Promise<PingResult> {
   validatePath(claudePath);
+  const resolved = path.isAbsolute(claudePath) ? claudePath : resolveExePath(claudePath);
   const start = Date.now();
   try {
     const pty = await import('@lydell/node-pty');
 
     return new Promise<PingResult>((resolve) => {
-      const proc = pty.spawn(claudePath, [], {
+      const proc = pty.spawn(resolved, [], {
         name: 'xterm-256color',
         cols: 80,
         rows: 24,

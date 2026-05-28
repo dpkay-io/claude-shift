@@ -1,5 +1,5 @@
 import type { DayOfWeek, WorkWindow, Trigger } from '../config/schema.js';
-import { parseTime, formatTime, previousDay } from './time-utils.js';
+import { parseTime, formatTime, previousDay, sortDays } from './time-utils.js';
 
 export interface CalculatedPing {
   time: string; // HH:mm
@@ -11,8 +11,10 @@ export interface CalculatedPing {
 /**
  * Given work windows and a slot duration, calculate optimal ping times.
  *
- * For isolated windows (gap > slotDuration from neighbors), the ping fires
- * at the window start — a fresh slot begins right when work does, zero waste.
+ * For isolated windows (gap > slotDuration from neighbors), a pre-burn ping
+ * fires (slotDuration − burnRate) hours before work starts — the slot's
+ * wall-clock expiry coincides with burn-rate exhaustion, so a fresh slot
+ * is ready right when the first one runs out mid-work.
  *
  * For consecutive windows (gap < slotDuration), a single pre-burn ping is
  * placed so the slot expires at the next window's start, giving a fresh slot
@@ -25,6 +27,15 @@ export function calculatePings(
   burnRate: number, // hours — kept for API compatibility
 ): CalculatedPing[] {
   const slotMinutes = slotDuration * 60;
+
+  for (const w of windows) {
+    if (parseTime(w.start) >= parseTime(w.end)) {
+      throw new Error(
+        `Invalid window ${w.start}–${w.end}: start must be before end (midnight-spanning windows must be split into two)`,
+      );
+    }
+  }
+
   const results: CalculatedPing[] = [];
 
   const sorted = [...windows].sort((a, b) => parseTime(a.start) - parseTime(b.start));
@@ -64,9 +75,25 @@ export function calculatePings(
         }
       }
 
+      const burnMinutes = burnRate * 60;
+      const windowDuration = parseTime(window.end) - windowStart;
+      let preBurn: number;
+      if (burnMinutes >= slotMinutes) {
+        preBurn = 0;
+      } else if (windowDuration <= burnMinutes) {
+        preBurn = burnMinutes;
+      } else {
+        preBurn = slotMinutes - burnMinutes;
+      }
+      let pingMinutes = windowStart - preBurn;
+      let pingDays = [...days];
+      if (pingMinutes < 0) {
+        pingMinutes += 1440;
+        pingDays = days.map(d => previousDay(d));
+      }
       results.push({
-        time: formatTime(windowStart),
-        days: [...days],
+        time: formatTime(pingMinutes),
+        days: pingDays,
         targetSlotStart: window.start,
         targetSlotEnd: window.end,
       });
@@ -118,9 +145,13 @@ function deduplicatePings(pings: CalculatedPing[]): CalculatedPing[] {
     const existing = map.get(key);
     if (existing) {
       const allDays = new Set([...existing.days, ...ping.days]);
-      existing.days = [...allDays];
-      existing.targetSlotStart = ping.targetSlotStart;
-      existing.targetSlotEnd = ping.targetSlotEnd;
+      existing.days = sortDays([...allDays]);
+      if (parseTime(ping.targetSlotStart) < parseTime(existing.targetSlotStart)) {
+        existing.targetSlotStart = ping.targetSlotStart;
+      }
+      if (parseTime(ping.targetSlotEnd) > parseTime(existing.targetSlotEnd)) {
+        existing.targetSlotEnd = ping.targetSlotEnd;
+      }
     } else {
       map.set(key, { ...ping, days: [...ping.days] });
     }
@@ -132,5 +163,7 @@ function deduplicatePings(pings: CalculatedPing[]): CalculatedPing[] {
 export function explainPing(ping: CalculatedPing, slotDuration: number): string {
   const pingMinutes = parseTime(ping.time);
   const slotEnd = formatTime((pingMinutes + slotDuration * 60) % 1440);
-  return `Ping at ${ping.time} → slot ${ping.time}–${slotEnd} for your ${ping.targetSlotStart}–${ping.targetSlotEnd} window`;
+  const dayBefore = pingMinutes > parseTime(ping.targetSlotStart);
+  const dayNote = dayBefore ? ' (day before)' : '';
+  return `Ping at ${ping.time}${dayNote} → slot ${ping.time}–${slotEnd} for your ${ping.targetSlotStart}–${ping.targetSlotEnd} window`;
 }

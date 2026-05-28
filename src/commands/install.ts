@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../config/manager.js';
 import { createScheduler } from '../scheduler/factory.js';
-import { isClaudeInstalled } from '../utils/claude-check.js';
+import { isClaudeInstalled, findClaude } from '../utils/claude-check.js';
 import * as display from '../utils/display.js';
 
 export async function installCommand(): Promise<void> {
@@ -39,6 +39,20 @@ export async function installCommand(): Promise<void> {
     return;
   }
   const nodePath = config.settings.nodePath;
+
+  if (!fs.existsSync(nodePath)) {
+    display.error(`Node.js not found at: ${nodePath}`);
+    display.info('Fix with: claude-shift config set nodePath /path/to/node');
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!path.isAbsolute(config.settings.claudePath)) {
+    const resolved = findClaude();
+    if (resolved) {
+      display.info(`Tip: claudePath is '${config.settings.claudePath}'. Using absolute path '${resolved}' is more reliable for scheduled tasks.`);
+    }
+  }
 
   let installed = 0;
   let failed = 0;

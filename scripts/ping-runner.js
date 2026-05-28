@@ -43,15 +43,31 @@ function releaseLock() {
   try { fs.unlinkSync(LOCK_FILE); } catch {}
 }
 
+function resolveExePath(name) {
+  const cmd = process.platform === 'win32' ? 'where' : 'which';
+  try {
+    const result = execFileSync(cmd, [name], { encoding: 'utf-8', timeout: 5000 });
+    const paths = result.trim().split('\n').map(s => s.trim()).filter(Boolean);
+    if (process.platform === 'win32') {
+      const exe = paths.find(p => p.toLowerCase().endsWith('.exe'));
+      if (exe) return exe;
+    }
+    return paths[0] || name;
+  } catch {}
+  return name;
+}
+
 function loadClaudePath() {
   try {
     const raw = fs.readFileSync(CONFIG_FILE, 'utf-8');
     const config = JSON.parse(raw);
     if (typeof config?.settings?.claudePath === 'string' && config.settings.claudePath) {
-      return config.settings.claudePath;
+      const p = config.settings.claudePath;
+      if (path.isAbsolute(p)) return p;
+      return resolveExePath(path.basename(p));
     }
   } catch {}
-  return 'claude';
+  return resolveExePath('claude');
 }
 
 async function main() {

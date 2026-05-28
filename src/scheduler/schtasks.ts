@@ -66,7 +66,7 @@ export class SchtasksScheduler implements SchedulerBackend {
 
   async check(): Promise<SchedulerCheckResult> {
     try {
-      schtasks('/query', '/fo', 'LIST', '/tn', '\\Microsoft');
+      schtasks('/query', '/fo', 'CSV', '/nh');
       return { available: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';

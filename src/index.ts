@@ -83,7 +83,7 @@ program
 
 const configCmd = program
   .command('config')
-  .description('View or modify settings (slotDuration, burnRate, claudePath, pingMessage)');
+  .description('View or modify settings (slotDuration, burnRate, claudePath, nodePath, pingMessage)');
 
 configCmd
   .command('get [key]')

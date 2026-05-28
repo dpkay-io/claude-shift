@@ -7,6 +7,7 @@ const SETTABLE_KEYS: (keyof Settings)[] = [
   'slotDuration',
   'burnRate',
   'claudePath',
+  'nodePath',
   'pingMessage',
 ];
 
