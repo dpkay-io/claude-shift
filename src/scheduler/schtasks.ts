@@ -13,7 +13,7 @@ function taskName(id: string): string {
 }
 
 function schtasks(...args: string[]): string {
-  return execFileSync('schtasks', args, { encoding: 'utf-8', timeout: 15000 });
+  return execFileSync('schtasks', args, { encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] });
 }
 
 export class SchtasksScheduler implements SchedulerBackend {

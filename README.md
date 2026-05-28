@@ -2,6 +2,8 @@
 
 Optimize your Claude Max 5-hour usage slots by scheduling strategic session pings. Pre-burn slots during idle hours (sleep, commute, office) so fresh slots align with your actual working hours.
 
+![claude-shift CLI](cli.png)
+
 ## Why?
 
 Claude Max gives you 5-hour usage windows. When a slot ends, a new one is available immediately. But if you just start working whenever, your slot boundaries land randomly — you might hit a slot expiry mid-flow.
