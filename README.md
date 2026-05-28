@@ -2,7 +2,7 @@
 
 Optimize your Claude Max 5-hour usage slots by scheduling strategic session pings. Pre-burn slots during idle hours (sleep, commute, office) so fresh slots align with your actual working hours.
 
-![claude-shift CLI](cli.png)
+![claude-shift CLI](https://raw.githubusercontent.com/dpkay-io/claude-shift/main/cli.png)
 
 ## Why?
 
