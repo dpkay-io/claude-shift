@@ -21,16 +21,18 @@ export async function statusCommand(): Promise<void> {
     display.error(`${scheduler.name} unavailable: ${check.reason}`);
   }
 
-  // Show configured triggers
+  // Fetch installed tasks
+  const installed = await scheduler.list();
+
+  // Show configured triggers (with installation status)
   console.log();
   console.log(chalk.bold('Configured triggers:'));
   console.log();
-  printTriggerTable(config.triggers);
+  printTriggerTable(config.triggers, installed);
 
   // Show installed tasks
   console.log();
   console.log(chalk.bold('Installed in scheduler:'));
-  const installed = await scheduler.list();
   if (installed.length === 0) {
     console.log(chalk.dim('  No tasks installed. Run `claude-shift install`.'));
   } else {

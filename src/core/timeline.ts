@@ -124,6 +124,19 @@ export function renderTimeline(
 ): string {
   const lines: string[] = [];
 
+  const hasPings = days.some(day => triggers.some(t => t.enabled && t.days.includes(day)));
+  const hasWindows = days.some(day => getWindowsForDay(day, smartConfigs).length > 0);
+
+  if (!hasPings && !hasWindows) {
+    lines.push('');
+    lines.push(chalk.bold('  Schedule Timeline'));
+    lines.push('');
+    lines.push(chalk.dim('  No pings or work windows scheduled.'));
+    lines.push(chalk.dim('  Use "claude-shift add" or "claude-shift smart" to set up your schedule.'));
+    lines.push('');
+    return lines.join('\n');
+  }
+
   lines.push('');
   lines.push(chalk.bold('  Schedule Timeline'));
   lines.push('');
