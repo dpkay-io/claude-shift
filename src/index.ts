@@ -12,6 +12,7 @@ import { statusCommand } from './commands/status.js';
 import { runCommand } from './commands/run.js';
 import { todayCommand } from './commands/today.js';
 import { weekCommand } from './commands/week.js';
+import { configGetCommand, configSetCommand } from './commands/config.js';
 
 const program = new Command();
 
@@ -47,7 +48,7 @@ program
 
 program
   .command('remove <id>')
-  .description('Remove a trigger by ID (e.g., shift-001)')
+  .description('Remove a trigger by ID (e.g., 001)')
   .action(removeCommand);
 
 program
@@ -79,5 +80,19 @@ program
   .command('week')
   .description('Show the full week visual timeline')
   .action(weekCommand);
+
+const configCmd = program
+  .command('config')
+  .description('View or modify settings (slotDuration, burnRate, claudePath, pingMessage)');
+
+configCmd
+  .command('get [key]')
+  .description('Show one setting, or all settings if no key given')
+  .action(configGetCommand);
+
+configCmd
+  .command('set <key> <value>')
+  .description('Set a configuration value')
+  .action(configSetCommand);
 
 program.parse();

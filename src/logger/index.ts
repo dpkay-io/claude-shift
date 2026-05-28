@@ -23,13 +23,17 @@ function rotateIfNeeded(filePath: string): void {
   }
 }
 
+function sanitize(s: string): string {
+  return s.replace(/[\n\r]/g, ' ');
+}
+
 export function logPing(triggerId: string, status: 'success' | 'error', detail?: string): void {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   const filePath = logPath();
   rotateIfNeeded(filePath);
   const ts = new Date().toISOString();
-  const extra = detail ? ` detail="${detail}"` : '';
-  const line = `[${ts}] PING trigger=${triggerId} status=${status}${extra}\n`;
+  const extra = detail ? ` detail="${sanitize(detail)}"` : '';
+  const line = `[${ts}] PING trigger=${sanitize(triggerId)} status=${status}${extra}\n`;
   fs.appendFileSync(filePath, line, 'utf-8');
 }
 

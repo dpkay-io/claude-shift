@@ -6,7 +6,7 @@ Optimize your Claude Max 5-hour usage slots by scheduling strategic session ping
 
 Claude Max gives you 5-hour usage windows. When a slot ends, a new one is available immediately. But if you just start working whenever, your slot boundaries land randomly — you might hit a slot expiry mid-flow.
 
-**claude-shift** lets you control when slots start and end by pinging Claude at strategic times. A ping during sleep burns through a slot so it expires right when you wake up, giving you the tail of the expiring slot *plus* a fresh one for extended continuous coverage.
+**claude-shift** lets you control when slots start and end by pinging Claude at strategic times. For isolated work windows, a ping fires right at the start — giving you a fresh slot with zero waste. For consecutive windows close together, a single pre-burn ping aligns the slot boundary so a fresh slot is ready for the next work block.
 
 ## Example
 
@@ -24,11 +24,10 @@ Smart mode calculation:
     8pm – 11pm on weekdays
 
   Calculated pings:
-    Ping at 01:30 → slot runs 01:30–06:30 → fresh slot at 06:30
-    Ping at 04:00 → slot runs 04:00–09:00 → fresh slot at 09:00
-    Ping at 15:00 → slot runs 15:00–20:00 → fresh slot at 20:00
+    Ping at 04:00 → slot 04:00–09:00 for your 06:30–11:00 window
+    Ping at 20:00 → slot 20:00–01:00 for your 20:00–23:00 window
 
-✓ 3 smart trigger(s) configured.
+✓ 2 smart trigger(s) configured.
 ```
 
 Visual timeline:
@@ -38,9 +37,9 @@ Visual timeline:
 
       00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23
       |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-  Mon    ⚡──────⚡──────────────                  ⚡──────────────
+  Mon             ⚡──────────────                                 ⚡──────────
                        ████   ██████                           █████████
-  Tue    ⚡──────⚡──────────────                  ⚡──────────────
+  Tue             ⚡──────────────                                 ⚡──────────
                        ████   ██████                           █████████
 
   ⚡ ping  ─ slot (5h)  █ work window
@@ -113,7 +112,7 @@ claude-shift status   # Scheduler status + recent ping logs
 ### Manage triggers
 
 ```bash
-claude-shift remove shift-001   # Remove a trigger by ID
+claude-shift remove 001   # Remove a trigger by ID
 claude-shift uninstall          # Remove all from OS scheduler
 ```
 
@@ -126,11 +125,11 @@ claude-shift run    # Fire a ping right now
 ## How it works
 
 1. **You configure** when you want to work (smart mode) or when to ping (manual mode)
-2. **claude-shift calculates** optimal ping times by working backwards from your schedule
+2. **claude-shift calculates** optimal ping times — at your work start for isolated windows, or a single pre-burn for consecutive windows
 3. **Your OS scheduler** fires the pings at the right times
 4. **Each ping** opens an interactive Claude session via a pseudo-TTY, sends a message, and exits
-5. **The session starts** a 5-hour slot that burns during your idle time
-6. **When you sit down** to work, a fresh slot is ready
+5. **For isolated windows**, the ping starts a fresh slot right when you begin work
+6. **For consecutive windows**, one pre-burn ping aligns the slot boundary so the next work block gets a fresh slot
 
 ## Configuration
 

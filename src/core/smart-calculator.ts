@@ -9,84 +9,105 @@ export interface CalculatedPing {
 }
 
 /**
- * Given work windows and a slot duration, calculate the ping times needed
- * to ensure fresh slots are available when work starts.
+ * Given work windows and a slot duration, calculate optimal ping times.
  *
- * The logic: to have a slot that ENDS at a specific time (so a fresh slot
- * starts right then), schedule a ping at (endTime - slotDuration).
+ * For isolated windows (gap > slotDuration from neighbors), the ping fires
+ * at the window start — a fresh slot begins right when work does, zero waste.
  *
- * For the user's workflow:
- *   - Work 6:30-8:00 → want slot ending at 8:00 → ping at 3:00
- *   - Work 20:00-23:00 → want slot ending at ~21:30 → ping at 16:30
- *     (gives tail of dying slot + fresh slot for continuous coverage)
- *
- * The algorithm uses the work window start + burnRate to determine when
- * the user will exhaust their slot, then ensures a ping is placed so
- * the next slot is ready.
+ * For consecutive windows (gap < slotDuration), a single pre-burn ping is
+ * placed so the slot expires at the next window's start, giving a fresh slot
+ * exactly when the next work block begins.
  */
 export function calculatePings(
   windows: WorkWindow[],
   days: DayOfWeek[],
   slotDuration: number, // hours
-  burnRate: number, // hours — how long user effectively uses a slot
+  burnRate: number, // hours — kept for API compatibility
 ): CalculatedPing[] {
   const slotMinutes = slotDuration * 60;
   const results: CalculatedPing[] = [];
 
-  // Sort windows by start time
   const sorted = [...windows].sort((a, b) => parseTime(a.start) - parseTime(b.start));
+  const merged = mergeOverlapping(sorted);
+  const chains = groupChains(merged, slotMinutes);
 
-  for (const window of sorted) {
-    const windowStart = parseTime(window.start);
-    const windowEnd = parseTime(window.end);
-    const windowDuration = windowEnd > windowStart
-      ? windowEnd - windowStart
-      : (1440 - windowStart) + windowEnd; // crosses midnight
+  for (const chain of chains) {
+    let slotExpiry = -1;
 
-    // Determine how many slots this work window needs
-    // and where to place pings so slot boundaries align well
-    let coveredFrom = windowStart;
-    let remaining = windowDuration;
-    let isFirstSlot = true;
+    for (let i = 0; i < chain.length; i++) {
+      const window = chain[i]!;
+      const windowStart = parseTime(window.start);
 
-    while (remaining > 0) {
-      if (isFirstSlot) {
-        // For the first slot of a work window, we want a ping scheduled
-        // slotDuration before the window starts, so the "waste" slot expires
-        // right when work begins = fresh slot available
-        let pingMinutes = windowStart - slotMinutes;
-        let pingDays = [...days];
+      if (slotExpiry >= windowStart) continue;
 
-        if (pingMinutes < 0) {
-          pingMinutes += 1440;
-          pingDays = days.map(d => previousDay(d));
+      const nextWindow = i + 1 < chain.length ? chain[i + 1]! : undefined;
+
+      if (nextWindow) {
+        const nextStart = parseTime(nextWindow.start);
+        const rawPing = nextStart - slotMinutes;
+
+        if (rawPing <= windowStart) {
+          let pingMinutes = rawPing;
+          let pingDays = [...days];
+          if (pingMinutes < 0) {
+            pingMinutes += 1440;
+            pingDays = days.map(d => previousDay(d));
+          }
+          results.push({
+            time: formatTime(pingMinutes),
+            days: pingDays,
+            targetSlotStart: window.start,
+            targetSlotEnd: nextWindow.end,
+          });
+          slotExpiry = nextStart + slotMinutes;
+          continue;
         }
-
-        results.push({
-          time: formatTime(pingMinutes),
-          days: pingDays,
-          targetSlotStart: window.start,
-          targetSlotEnd: window.end,
-        });
-
-        // After the fresh slot starts at windowStart, user works for burnRate hours
-        // or until window ends, whichever is shorter
-        const thisChunk = Math.min(burnRate * 60, remaining);
-        coveredFrom = (coveredFrom + thisChunk) % 1440;
-        remaining -= thisChunk;
-        isFirstSlot = false;
-      } else {
-        // Subsequent slots within the same window chain naturally
-        // (previous slot expires → new one starts when user continues working)
-        // No ping needed — the slot starts on next usage
-        const thisChunk = Math.min(burnRate * 60, remaining);
-        coveredFrom = (coveredFrom + thisChunk) % 1440;
-        remaining -= thisChunk;
       }
+
+      results.push({
+        time: formatTime(windowStart),
+        days: [...days],
+        targetSlotStart: window.start,
+        targetSlotEnd: window.end,
+      });
+      slotExpiry = windowStart + slotMinutes;
     }
   }
 
   return deduplicatePings(results);
+}
+
+function mergeOverlapping(sorted: WorkWindow[]): WorkWindow[] {
+  if (sorted.length === 0) return [];
+  const result: WorkWindow[] = [{ ...sorted[0]! }];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = result[result.length - 1]!;
+    const curr = sorted[i]!;
+    if (parseTime(curr.start) <= parseTime(prev.end)) {
+      if (parseTime(curr.end) > parseTime(prev.end)) {
+        prev.end = curr.end;
+      }
+    } else {
+      result.push({ ...curr });
+    }
+  }
+  return result;
+}
+
+function groupChains(windows: WorkWindow[], slotMinutes: number): WorkWindow[][] {
+  if (windows.length === 0) return [];
+  const chains: WorkWindow[][] = [[windows[0]!]];
+  for (let i = 1; i < windows.length; i++) {
+    const lastChain = chains[chains.length - 1]!;
+    const lastWindow = lastChain[lastChain.length - 1]!;
+    const gap = parseTime(windows[i]!.start) - parseTime(lastWindow.end);
+    if (gap < slotMinutes) {
+      lastChain.push(windows[i]!);
+    } else {
+      chains.push([windows[i]!]);
+    }
+  }
+  return chains;
 }
 
 function deduplicatePings(pings: CalculatedPing[]): CalculatedPing[] {
@@ -110,6 +131,6 @@ function deduplicatePings(pings: CalculatedPing[]): CalculatedPing[] {
 
 export function explainPing(ping: CalculatedPing, slotDuration: number): string {
   const pingMinutes = parseTime(ping.time);
-  const slotEnd = formatTime(pingMinutes + slotDuration * 60);
-  return `Ping at ${ping.time} → slot runs ${ping.time}–${slotEnd} → fresh slot available at ${slotEnd} for your ${ping.targetSlotStart}–${ping.targetSlotEnd} window`;
+  const slotEnd = formatTime((pingMinutes + slotDuration * 60) % 1440);
+  return `Ping at ${ping.time} → slot ${ping.time}–${slotEnd} for your ${ping.targetSlotStart}–${ping.targetSlotEnd} window`;
 }

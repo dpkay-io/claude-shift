@@ -20,6 +20,11 @@ export function smartCommand(options: { slots: string; days?: string; burnRate?:
   const days: DayOfWeek[] = options.days ? parseDays(options.days) : parseDays('weekdays');
   const config = loadConfig();
   const parsed = options.burnRate ? parseFloat(options.burnRate) : NaN;
+  if (options.burnRate && (isNaN(parsed) || parsed <= 0 || !isFinite(parsed))) {
+    display.error('Burn rate must be a positive number.');
+    process.exitCode = 1;
+    return;
+  }
   const burnRate = isNaN(parsed) ? config.settings.burnRate : parsed;
 
   const pings = calculatePings(windows, days, config.settings.slotDuration, burnRate);

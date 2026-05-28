@@ -12,12 +12,16 @@ export async function removeCommand(id: string): Promise<void> {
     return;
   }
 
-  // Also remove from OS scheduler if installed
   try {
     const scheduler = createScheduler();
     await scheduler.remove(id);
-  } catch {
-    // Not installed in scheduler — that's fine
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('not found') || msg.includes('does not exist') || msg.includes('No such file')) {
+      // Not installed in scheduler — that's fine
+    } else {
+      display.warn(`Scheduler removal failed: ${msg}. Trigger removed from config only.`);
+    }
   }
 
   saveConfig(config);

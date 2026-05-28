@@ -28,11 +28,12 @@ export class CronScheduler implements SchedulerBackend {
   readonly name = 'cron';
 
   async install(task: ScheduledTask): Promise<void> {
+    if (/[\n\r]/.test(task.command)) throw new Error('Command must not contain newlines');
     const timeParts = task.time.split(':');
     if (timeParts.length < 2) throw new Error(`Invalid time format: "${task.time}" (expected HH:mm)`);
     const [hours, minutes] = timeParts;
     const cronDays = toCronDays(task.days);
-    const entry = `${minutes} ${hours} * * ${cronDays} ${task.command} ${TAG_PREFIX}${task.id}`;
+    const entry = `${parseInt(minutes!, 10)} ${parseInt(hours!, 10)} * * ${cronDays} ${task.command} ${TAG_PREFIX}${task.id}`;
 
     let crontab = getCurrentCrontab();
     // Remove existing entry for this ID

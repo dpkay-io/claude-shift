@@ -5,6 +5,7 @@ import { smartCommand } from './smart.js';
 import { addCommand } from './add.js';
 import { installCommand } from './install.js';
 import * as display from '../utils/display.js';
+import { printTriggerTable } from '../utils/display.js';
 import chalk from 'chalk';
 
 async function ask(rl: readline.Interface, question: string, fallback?: string): Promise<string> {
@@ -14,6 +15,12 @@ async function ask(rl: readline.Interface, question: string, fallback?: string):
 }
 
 export async function initCommand(): Promise<void> {
+  if (!process.stdin.isTTY) {
+    console.error('Error: init requires an interactive terminal.');
+    process.exitCode = 1;
+    return;
+  }
+
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
   try {
@@ -86,6 +93,15 @@ export async function initCommand(): Promise<void> {
       }
     }
 
+    // Show configured triggers
+    const finalConfig = loadConfig();
+    if (finalConfig.triggers.length > 0) {
+      console.log();
+      console.log(chalk.bold('Configured triggers:'));
+      console.log();
+      printTriggerTable(finalConfig.triggers);
+    }
+
     // Offer to install
     let rl2: readline.Interface | undefined;
     try {
@@ -101,7 +117,9 @@ export async function initCommand(): Promise<void> {
     } finally {
       rl2?.close();
     }
-  } catch {
+  } catch (err) {
     rl.close();
+    if (err instanceof Error) display.error(err.message);
+    process.exitCode = 1;
   }
 }

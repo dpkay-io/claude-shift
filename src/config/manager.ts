@@ -1,27 +1,61 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Config, Trigger, DayOfWeek } from './schema.js';
-import { CONFIG_DIR, CONFIG_FILE, defaultConfig } from './defaults.js';
+import { CONFIG_DIR, CONFIG_FILE, defaultConfig, defaultSettings } from './defaults.js';
 
 function ensureDir(): void {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
 }
 
+function validateConfig(raw: unknown): Config {
+  if (raw === null || typeof raw !== 'object') throw new Error('not an object');
+  const obj = raw as Record<string, unknown>;
+
+  const defaults = defaultConfig();
+  const defSettings = defaultSettings();
+
+  const version = obj.version === 1 ? 1 : defaults.version;
+  const nextId = typeof obj.nextId === 'number' && obj.nextId >= 1 ? obj.nextId : defaults.nextId;
+  const triggers = Array.isArray(obj.triggers) ? obj.triggers.filter(isValidTrigger) : [];
+  const smart = Array.isArray(obj.smart) ? obj.smart : undefined;
+
+  const rawSettings = typeof obj.settings === 'object' && obj.settings !== null
+    ? obj.settings as Record<string, unknown>
+    : {};
+  const settings = {
+    slotDuration: typeof rawSettings.slotDuration === 'number' && rawSettings.slotDuration > 0 ? rawSettings.slotDuration : defSettings.slotDuration,
+    burnRate: typeof rawSettings.burnRate === 'number' && rawSettings.burnRate > 0 ? rawSettings.burnRate : defSettings.burnRate,
+    claudePath: typeof rawSettings.claudePath === 'string' && rawSettings.claudePath ? rawSettings.claudePath : defSettings.claudePath,
+    nodePath: typeof rawSettings.nodePath === 'string' && rawSettings.nodePath ? rawSettings.nodePath : defSettings.nodePath,
+    logFile: typeof rawSettings.logFile === 'string' && rawSettings.logFile ? rawSettings.logFile : defSettings.logFile,
+    pingMessage: typeof rawSettings.pingMessage === 'string' ? rawSettings.pingMessage : defSettings.pingMessage,
+  };
+
+  return { version, triggers, smart, nextId, settings } as Config;
+}
+
+function isValidTrigger(t: unknown): t is Trigger {
+  if (t === null || typeof t !== 'object') return false;
+  const obj = t as Record<string, unknown>;
+  return typeof obj.id === 'string'
+    && typeof obj.time === 'string'
+    && Array.isArray(obj.days)
+    && typeof obj.enabled === 'boolean'
+    && (obj.source === 'manual' || obj.source === 'smart');
+}
+
 export function loadConfig(): Config {
   ensureDir();
-  if (!fs.existsSync(CONFIG_FILE)) {
-    const config = defaultConfig();
-    saveConfig(config);
-    return config;
-  }
   try {
     const raw = fs.readFileSync(CONFIG_FILE, 'utf-8');
-    return JSON.parse(raw) as Config;
-  } catch {
-    const backup = CONFIG_FILE + '.bak';
-    if (fs.existsSync(CONFIG_FILE)) {
-      fs.copyFileSync(CONFIG_FILE, backup);
+    return validateConfig(JSON.parse(raw));
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ENOENT') {
+      const config = defaultConfig();
+      saveConfig(config);
+      return config;
     }
+    try { fs.copyFileSync(CONFIG_FILE, CONFIG_FILE + '.bak'); } catch {}
     const config = defaultConfig();
     saveConfig(config);
     return config;
@@ -34,7 +68,7 @@ export function saveConfig(config: Config): void {
 }
 
 export function addTrigger(config: Config, trigger: Omit<Trigger, 'id'>): Trigger {
-  const id = `shift-${String(config.nextId).padStart(3, '0')}`;
+  const id = String(config.nextId).padStart(3, '0');
   const full: Trigger = { id, ...trigger };
   config.triggers.push(full);
   config.nextId++;

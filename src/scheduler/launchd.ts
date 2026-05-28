@@ -16,12 +16,30 @@ function plistPath(id: string): string {
   return path.join(PLIST_DIR, `${LABEL_PREFIX}${id}.plist`);
 }
 
+function parseCommandArgs(cmd: string): string[] {
+  const args: string[] = [];
+  let current = '';
+  let inQuote = false;
+  for (const ch of cmd) {
+    if (ch === '"') {
+      inQuote = !inQuote;
+    } else if (ch === ' ' && !inQuote) {
+      if (current) args.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  if (current) args.push(current);
+  return args;
+}
+
 function buildPlist(task: ScheduledTask): string {
   const label = `${LABEL_PREFIX}${task.id}`;
   const timeParts = task.time.split(':');
   if (timeParts.length < 2) throw new Error(`Invalid time format: "${task.time}" (expected HH:mm)`);
   const [hours, minutes] = timeParts.map(Number);
-  const args = task.command.split(' ').map(a => `      <string>${escapeXml(a)}</string>`).join('\n');
+  const args = parseCommandArgs(task.command).map(a => `      <string>${escapeXml(a)}</string>`).join('\n');
 
   const calendarEntries = task.days.map(day => `      <dict>
         <key>Hour</key>

@@ -16,12 +16,12 @@ describe('config manager', () => {
   describe('addTrigger', () => {
     it('adds a trigger with auto-incremented ID', () => {
       const t = addTrigger(config, { time: '03:00', days: ['mon'], source: 'manual', enabled: true });
-      expect(t.id).toBe('shift-001');
+      expect(t.id).toBe('001');
       expect(config.triggers).toHaveLength(1);
       expect(config.nextId).toBe(2);
 
       const t2 = addTrigger(config, { time: '15:00', days: ['fri'], source: 'smart', enabled: true });
-      expect(t2.id).toBe('shift-002');
+      expect(t2.id).toBe('002');
       expect(config.triggers).toHaveLength(2);
     });
   });
@@ -29,13 +29,13 @@ describe('config manager', () => {
   describe('removeTrigger', () => {
     it('removes an existing trigger', () => {
       addTrigger(config, { time: '03:00', days: ['mon'], source: 'manual', enabled: true });
-      const removed = removeTrigger(config, 'shift-001');
+      const removed = removeTrigger(config, '001');
       expect(removed).not.toBeNull();
       expect(config.triggers).toHaveLength(0);
     });
 
     it('returns null for non-existent ID', () => {
-      expect(removeTrigger(config, 'shift-999')).toBeNull();
+      expect(removeTrigger(config, '999')).toBeNull();
     });
   });
 

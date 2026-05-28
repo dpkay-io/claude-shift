@@ -15,14 +15,22 @@ function minuteToCol(minutes: number): number {
   return Math.round((minutes / 1440) * COLS);
 }
 
+function fillRange(row: string[], start: number, end: number, char: string): void {
+  for (let i = start; i < Math.min(end, COLS); i++) {
+    row[i] = char;
+  }
+}
+
 function renderRow(spans: SlotSpan[], char: string, colorFn: (s: string) => string): string {
   const row = new Array(COLS).fill(' ');
   for (const span of spans) {
     const start = minuteToCol(span.start);
-    let end = minuteToCol(span.end);
-    if (end <= start) end = COLS;
-    for (let i = start; i < Math.min(end, COLS); i++) {
-      row[i] = char;
+    const end = minuteToCol(span.end);
+    if (end <= start) {
+      fillRange(row, start, COLS, char);
+      fillRange(row, 0, end, char);
+    } else {
+      fillRange(row, start, end, char);
     }
   }
   return row.map(c => c === char ? colorFn(c) : c).join('');
@@ -72,11 +80,6 @@ export function renderDayTimeline(
     return { start, end, type: 'slot' as const };
   });
 
-  const pingSpans: SlotSpan[] = dayTriggers.map(t => {
-    const start = parseTime(t.time);
-    return { start, end: Math.min(start + 1, 1440), type: 'ping' as const };
-  });
-
   const dayWindows = getWindowsForDay(day, smartConfigs);
   const workSpans: SlotSpan[] = dayWindows.map(w => {
     const start = parseTime(w.start);
@@ -87,13 +90,25 @@ export function renderDayTimeline(
   const lines: string[] = [];
   const label = `  ${dayShort(day).padEnd(4)}`;
 
-  const slotRow = renderRow(slotSpans, '─', chalk.yellow);
-  const combined = slotRow.split('');
-  for (const p of pingSpans) {
-    const col = minuteToCol(p.start);
-    if (col < COLS) combined[col] = chalk.red('⚡');
+  const grid: ('ping' | 'slot' | ' ')[] = new Array(COLS).fill(' ');
+  for (const span of slotSpans) {
+    const start = minuteToCol(span.start);
+    const end = minuteToCol(span.end);
+    if (end <= start) {
+      for (let i = start; i < COLS; i++) grid[i] = 'slot';
+      for (let i = 0; i < end; i++) grid[i] = 'slot';
+    } else {
+      for (let i = start; i < Math.min(end, COLS); i++) grid[i] = 'slot';
+    }
   }
-  lines.push(`${label} ${combined.join('')}`);
+  for (const t of dayTriggers) {
+    const col = minuteToCol(parseTime(t.time));
+    if (col < COLS) grid[col] = 'ping';
+  }
+  const slotRow = grid.map(c =>
+    c === 'ping' ? chalk.red('⚡') : c === 'slot' ? chalk.yellow('─') : ' '
+  ).join('');
+  lines.push(`${label} ${slotRow}`);
 
   const workRow = renderRow(workSpans, '█', chalk.green);
   lines.push(`${''.padEnd(6)}${workRow}`);

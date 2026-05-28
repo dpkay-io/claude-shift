@@ -6,18 +6,22 @@ export interface PingResult {
   error?: string;
 }
 
+const SHELL_META = /[;&|`$(){}[\]!#~<>*?\n\r]/;
+
+function validatePath(p: string): void {
+  if (!p || SHELL_META.test(p)) {
+    throw new Error(`Invalid executable path: "${p}"`);
+  }
+}
+
 export async function executePing(claudePath: string, message: string, triggerId: string = 'manual'): Promise<PingResult> {
+  validatePath(claudePath);
   const start = Date.now();
   try {
     const pty = await import('@lydell/node-pty');
 
     return new Promise<PingResult>((resolve) => {
-      const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
-      const args = process.platform === 'win32'
-        ? ['/c', claudePath]
-        : ['-c', claudePath];
-
-      const proc = pty.spawn(shell, args, {
+      const proc = pty.spawn(claudePath, [], {
         name: 'xterm-256color',
         cols: 80,
         rows: 24,
@@ -36,18 +40,17 @@ export async function executePing(claudePath: string, message: string, triggerId
 
       proc.onData((data: string) => {
         output += data;
-        // Wait for claude to be ready (shows prompt), then send message
+        if (output.length > 1_000_000) return;
         if (!sentMessage && (output.includes('>') || output.includes('Claude'))) {
+          sentMessage = true;
           setTimeout(() => {
             proc.write(message + '\r');
-            sentMessage = true;
           }, 1000);
         }
-        // After sending message, wait for response then exit
         if (sentMessage && !sentExit && output.length > message.length + 200) {
+          sentExit = true;
           setTimeout(() => {
             proc.write('/exit\r');
-            sentExit = true;
           }, 2000);
         }
       });
@@ -55,8 +58,9 @@ export async function executePing(claudePath: string, message: string, triggerId
       proc.onExit(({ exitCode }) => {
         clearTimeout(timeout);
         const duration = Date.now() - start;
-        logPing(triggerId, 'success', `exit=${exitCode} duration=${duration}ms`);
-        resolve({ success: true, duration });
+        const ok = exitCode === 0 || exitCode === null;
+        logPing(triggerId, ok ? 'success' : 'error', `exit=${exitCode} duration=${duration}ms`);
+        resolve({ success: ok, duration, error: ok ? undefined : `process exited with code ${exitCode}` });
       });
     });
   } catch (err) {

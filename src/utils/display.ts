@@ -2,6 +2,18 @@ import chalk from 'chalk';
 import type { Trigger } from '../config/schema.js';
 import { formatTime12h, formatDays, parseTime } from '../core/time-utils.js';
 
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1B\[[0-9;]*m/g;
+
+function visibleLength(s: string): number {
+  return s.replace(ANSI_RE, '').length;
+}
+
+function pad(s: string, width: number): string {
+  const diff = width - visibleLength(s);
+  return diff > 0 ? s + ' '.repeat(diff) : s;
+}
+
 export function printTriggerTable(triggers: Trigger[]): void {
   if (triggers.length === 0) {
     console.log(chalk.dim('  No triggers configured.'));
@@ -19,7 +31,7 @@ export function printTriggerTable(triggers: Trigger[]): void {
     const target = t.smartMeta
       ? `${formatTime12h(parseTime(t.smartMeta.targetSlotStart))}–${formatTime12h(parseTime(t.smartMeta.targetSlotEnd))}`
       : chalk.dim('—');
-    console.log(`  ${chalk.cyan(t.id.padEnd(12))} ${time.padEnd(8)} ${days.padEnd(20)} ${t.source.padEnd(8)} ${status.padEnd(8)} ${target}`);
+    console.log(`  ${pad(chalk.cyan(t.id), 12)} ${pad(time, 8)} ${pad(days, 20)} ${pad(t.source, 8)} ${pad(status, 8)} ${target}`);
   }
 }
 

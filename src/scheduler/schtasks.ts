@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import type { DayOfWeek } from '../config/schema.js';
 import type { SchedulerBackend, ScheduledTask, InstalledTask, SchedulerCheckResult } from './types.js';
 
@@ -12,8 +12,8 @@ function taskName(id: string): string {
   return `${TASK_PREFIX}${id}`;
 }
 
-function exec(cmd: string): string {
-  return execSync(cmd, { encoding: 'utf-8', timeout: 15000, shell: 'cmd.exe' });
+function schtasks(...args: string[]): string {
+  return execFileSync('schtasks', args, { encoding: 'utf-8', timeout: 15000 });
 }
 
 export class SchtasksScheduler implements SchedulerBackend {
@@ -23,26 +23,14 @@ export class SchtasksScheduler implements SchedulerBackend {
     const name = taskName(task.id);
     const days = task.days.map(d => SCHTASKS_DAY_MAP[d]).join(',');
 
-    // Delete existing if present
-    try { exec(`schtasks /delete /tn "${name}" /f`); } catch {}
+    try { schtasks('/delete', '/tn', name, '/f'); } catch {}
 
-    const cmd = [
-      'schtasks /create',
-      `/tn "${name}"`,
-      `/tr "${task.command}"`,
-      '/sc WEEKLY',
-      `/d ${days}`,
-      `/st ${task.time}`,
-      '/rl LIMITED',
-      '/f',
-    ].join(' ');
-
-    exec(cmd);
+    schtasks('/create', '/tn', name, '/tr', task.command, '/sc', 'WEEKLY', '/d', days, '/st', task.time, '/rl', 'LIMITED', '/f');
   }
 
   async remove(id: string): Promise<void> {
     const name = taskName(id);
-    try { exec(`schtasks /delete /tn "${name}" /f`); } catch {}
+    try { schtasks('/delete', '/tn', name, '/f'); } catch {}
   }
 
   async removeAll(): Promise<void> {
@@ -54,7 +42,7 @@ export class SchtasksScheduler implements SchedulerBackend {
 
   async list(): Promise<InstalledTask[]> {
     try {
-      const output = exec('schtasks /query /fo CSV /nh');
+      const output = schtasks('/query', '/fo', 'CSV', '/nh');
       const results: InstalledTask[] = [];
 
       for (const line of output.split('\n')) {
@@ -62,7 +50,7 @@ export class SchtasksScheduler implements SchedulerBackend {
         if (!trimmed) continue;
         const cols = trimmed.split('","').map(s => s.replace(/"/g, ''));
         if (cols.length < 3 || !cols[0]) continue;
-        const name = cols[0];
+        const name = cols[0].replace(/^\\+/, '');
         if (!name.startsWith(TASK_PREFIX)) continue;
 
         const id = name.slice(TASK_PREFIX.length);
@@ -78,14 +66,14 @@ export class SchtasksScheduler implements SchedulerBackend {
 
   async check(): Promise<SchedulerCheckResult> {
     try {
-      exec('schtasks /query /fo LIST /tn "\\Microsoft"');
+      schtasks('/query', '/fo', 'LIST', '/tn', '\\Microsoft');
       return { available: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       if (msg.includes('Access is denied')) {
         return { available: false, reason: 'Access denied. Try running as administrator.' };
       }
-      return { available: true }; // "not found" is fine — schtasks works
+      return { available: true };
     }
   }
 }
