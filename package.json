@@ -1,0 +1,51 @@
+{
+  "name": "claude-shift",
+  "version": "0.1.0",
+  "description": "Optimize your Claude Max 5-hour slots by scheduling strategic session pings",
+  "type": "module",
+  "bin": {
+    "claude-shift": "./dist/index.js"
+  },
+  "files": [
+    "dist/",
+    "scripts/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "claude-max",
+    "scheduler",
+    "productivity",
+    "slot-management"
+  ],
+  "author": "dpkay-io",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dpkay-io/claude-shift.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dpkay-io/claude-shift/issues"
+  },
+  "homepage": "https://github.com/dpkay-io/claude-shift#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@lydell/node-pty": "^1.1.0",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.1.0"
+  }
+}

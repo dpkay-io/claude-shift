@@ -1,0 +1,83 @@
+#!/usr/bin/env node
+
+import { Command } from 'commander';
+import { initCommand } from './commands/init.js';
+import { addCommand } from './commands/add.js';
+import { smartCommand } from './commands/smart.js';
+import { listCommand } from './commands/list.js';
+import { removeCommand } from './commands/remove.js';
+import { installCommand } from './commands/install.js';
+import { uninstallCommand } from './commands/uninstall.js';
+import { statusCommand } from './commands/status.js';
+import { runCommand } from './commands/run.js';
+import { todayCommand } from './commands/today.js';
+import { weekCommand } from './commands/week.js';
+
+const program = new Command();
+
+program
+  .name('claude-shift')
+  .description('Optimize your Claude Max 5-hour slots by scheduling strategic session pings')
+  .version('0.1.0');
+
+program
+  .command('init')
+  .description('Interactive setup wizard')
+  .action(initCommand);
+
+program
+  .command('add <time>')
+  .description('Add a manual ping trigger (time in HH:mm format)')
+  .option('-d, --days <days>', 'Days to run (e.g., weekdays, mon-fri, mon,wed,fri)', 'weekdays')
+  .action(addCommand);
+
+program
+  .command('smart')
+  .description('Configure smart mode — provide your work windows, get optimal ping times')
+  .requiredOption('-s, --slots <slots>', 'Work windows (e.g., "06:30-08:00,09:00-11:00,20:00-23:00")')
+  .option('-d, --days <days>', 'Days to apply (e.g., weekdays, mon-fri)', 'weekdays')
+  .option('-b, --burn-rate <hours>', 'How many hours a slot typically lasts for you')
+  .option('-y, --yes', 'Skip confirmation')
+  .action(smartCommand);
+
+program
+  .command('list')
+  .description('List all configured triggers')
+  .action(listCommand);
+
+program
+  .command('remove <id>')
+  .description('Remove a trigger by ID (e.g., shift-001)')
+  .action(removeCommand);
+
+program
+  .command('install')
+  .description('Register all triggers with your OS scheduler (cron/launchd/schtasks)')
+  .action(installCommand);
+
+program
+  .command('uninstall')
+  .description('Remove all claude-shift tasks from your OS scheduler')
+  .action(uninstallCommand);
+
+program
+  .command('status')
+  .description('Show scheduler status, installed tasks, and recent ping logs')
+  .action(statusCommand);
+
+program
+  .command('run')
+  .description('Execute a ping right now (for testing)')
+  .action(runCommand);
+
+program
+  .command('today')
+  .description('Show today\'s visual timeline of pings, slots, and work windows')
+  .action(todayCommand);
+
+program
+  .command('week')
+  .description('Show the full week visual timeline')
+  .action(weekCommand);
+
+program.parse();
