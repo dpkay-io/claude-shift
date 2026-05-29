@@ -41,7 +41,21 @@ function buildPlist(task: ScheduledTask): string {
   const [hours, minutes] = timeParts.map(Number);
   const args = parseCommandArgs(task.command).map(a => `      <string>${escapeXml(a)}</string>`).join('\n');
 
-  const calendarEntries = task.days.map(day => `      <dict>
+  let calendarEntries: string;
+  if (task.date) {
+    const [, m, d] = task.date.split('-').map(Number);
+    calendarEntries = `      <dict>
+        <key>Month</key>
+        <integer>${m}</integer>
+        <key>Day</key>
+        <integer>${d}</integer>
+        <key>Hour</key>
+        <integer>${hours}</integer>
+        <key>Minute</key>
+        <integer>${minutes}</integer>
+      </dict>`;
+  } else {
+    calendarEntries = task.days.map(day => `      <dict>
         <key>Hour</key>
         <integer>${hours}</integer>
         <key>Minute</key>
@@ -49,6 +63,7 @@ function buildPlist(task: ScheduledTask): string {
         <key>Weekday</key>
         <integer>${LAUNCHD_DAY_MAP[day]}</integer>
       </dict>`).join('\n');
+  }
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

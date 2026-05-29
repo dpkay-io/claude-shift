@@ -10,6 +10,7 @@ export interface Trigger {
   days: DayOfWeek[];
   source: 'manual' | 'smart';
   enabled: boolean;
+  date?: string; // YYYY-MM-DD — one-time trigger, days is [] when set
   smartMeta?: {
     targetSlotStart: string;
     targetSlotEnd: string;

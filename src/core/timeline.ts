@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import type { Trigger, WorkWindow, SmartConfig, DayOfWeek } from '../config/schema.js';
-import { parseTime, dayShort } from './time-utils.js';
+import { parseTime, dayShort, todayDateString, getWeekDates } from './time-utils.js';
 
 const COLS = 72;
 const CHARS_PER_HOUR = COLS / 24;
@@ -69,8 +69,13 @@ export function renderDayTimeline(
   triggers: Trigger[],
   smartConfigs: SmartConfig[],
   slotDuration: number,
+  date?: string,
 ): string {
-  const dayTriggers = triggers.filter(t => t.enabled && t.days.includes(day));
+  const dayTriggers = triggers.filter(t => {
+    if (!t.enabled) return false;
+    if (t.date) return t.date === date;
+    return t.days.includes(day);
+  });
   const slotMinutes = slotDuration * 60;
 
   const dayWindows = getWindowsForDay(day, smartConfigs);
@@ -138,10 +143,15 @@ export function renderTimeline(
   smartConfigs: SmartConfig[],
   slotDuration: number,
   days: DayOfWeek[],
+  dates?: string[],
 ): string {
   const lines: string[] = [];
 
-  const hasPings = days.some(day => triggers.some(t => t.enabled && t.days.includes(day)));
+  const hasPings = days.some((day, i) => triggers.some(t => {
+    if (!t.enabled) return false;
+    if (t.date) return dates?.[i] === t.date;
+    return t.days.includes(day);
+  }));
   const hasWindows = days.some(day => getWindowsForDay(day, smartConfigs).length > 0);
 
   if (!hasPings && !hasWindows) {
@@ -160,8 +170,9 @@ export function renderTimeline(
   lines.push(`${''.padEnd(LABEL_WIDTH)}${renderHourHeader()}`);
   lines.push(`${''.padEnd(LABEL_WIDTH)}${renderHourTicks()}`);
 
-  for (const day of days) {
-    lines.push(renderDayTimeline(day, triggers, smartConfigs, slotDuration));
+  for (let i = 0; i < days.length; i++) {
+    if (i > 0) lines.push('');
+    lines.push(renderDayTimeline(days[i]!, triggers, smartConfigs, slotDuration, dates?.[i]));
   }
 
   lines.push('');
@@ -178,5 +189,5 @@ export function renderToday(
 ): string {
   const dayNames: DayOfWeek[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   const today = dayNames[new Date().getDay()]!;
-  return renderTimeline(triggers, smartConfigs, slotDuration, [today]);
+  return renderTimeline(triggers, smartConfigs, slotDuration, [today], [todayDateString()]);
 }

@@ -68,8 +68,9 @@ export async function installCommand(): Promise<void> {
   for (const trigger of enabled) {
     const command = `"${nodePath}" "${pingScript}" "${trigger.id}"`;
     try {
-      await scheduler.install({ id: trigger.id, command, time: trigger.time, days: trigger.days });
-      display.success(`${trigger.id}: ${trigger.time} on ${trigger.days.join(',')}`);
+      await scheduler.install({ id: trigger.id, command, time: trigger.time, days: trigger.days, ...(trigger.date ? { date: trigger.date } : {}) });
+      const schedule = trigger.date ? `${trigger.time} on ${trigger.date} (once)` : `${trigger.time} on ${trigger.days.join(',')}`;
+      display.success(`${trigger.id}: ${schedule}`);
       installed++;
     } catch (err) {
       display.error(`${trigger.id}: ${err instanceof Error ? err.message : String(err)}`);

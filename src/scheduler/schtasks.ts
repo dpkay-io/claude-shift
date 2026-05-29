@@ -21,11 +21,17 @@ export class SchtasksScheduler implements SchedulerBackend {
 
   async install(task: ScheduledTask): Promise<void> {
     const name = taskName(task.id);
-    const days = task.days.map(d => SCHTASKS_DAY_MAP[d]).join(',');
 
     try { schtasks('/delete', '/tn', name, '/f'); } catch {}
 
-    schtasks('/create', '/tn', name, '/tr', task.command, '/sc', 'WEEKLY', '/d', days, '/st', task.time, '/rl', 'LIMITED', '/f');
+    if (task.date) {
+      const [y, m, d] = task.date.split('-');
+      const sd = `${m}/${d}/${y}`;
+      schtasks('/create', '/tn', name, '/tr', task.command, '/sc', 'ONCE', '/sd', sd, '/st', task.time, '/rl', 'LIMITED', '/f');
+    } else {
+      const days = task.days.map(d => SCHTASKS_DAY_MAP[d]).join(',');
+      schtasks('/create', '/tn', name, '/tr', task.command, '/sc', 'WEEKLY', '/d', days, '/st', task.time, '/rl', 'LIMITED', '/f');
+    }
   }
 
   async remove(id: string): Promise<void> {

@@ -32,6 +32,7 @@ program
   .command('add <time>')
   .description('Add a manual ping trigger (time in HH:mm format)')
   .option('-d, --days <days>', 'Days to run (e.g., weekdays, mon-fri, mon,wed,fri)', 'weekdays')
+  .option('--once [date]', 'One-time trigger (default: today, or specify YYYY-MM-DD)')
   .action(addCommand);
 
 program

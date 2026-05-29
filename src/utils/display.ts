@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import type { Trigger } from '../config/schema.js';
 import type { InstalledTask } from '../scheduler/types.js';
-import { formatTime12h, formatDays, parseTime } from '../core/time-utils.js';
+import { formatTime12h, formatDays, formatDateShort, parseTime } from '../core/time-utils.js';
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1B(?:\[[0-9;]*[a-zA-Z]|\][^\x07]*\x07|\(B)/g;
@@ -29,7 +29,9 @@ export function printTriggerTable(triggers: Trigger[], installedTasks?: Installe
 
   for (const t of triggers) {
     const time = formatTime12h(parseTime(t.time));
-    const days = formatDays(t.days);
+    const days = t.date
+      ? `${formatDateShort(t.date)} ${chalk.dim('(once)')}`
+      : formatDays(t.days);
     let status: string;
     if (!t.enabled) {
       status = chalk.dim('off');

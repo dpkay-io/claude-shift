@@ -5,6 +5,7 @@ export interface ScheduledTask {
   command: string;
   time: string; // HH:mm
   days: DayOfWeek[];
+  date?: string; // YYYY-MM-DD for one-time triggers
 }
 
 export interface InstalledTask {

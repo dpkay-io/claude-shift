@@ -32,11 +32,17 @@ export class CronScheduler implements SchedulerBackend {
     const timeParts = task.time.split(':');
     if (timeParts.length < 2) throw new Error(`Invalid time format: "${task.time}" (expected HH:mm)`);
     const [hours, minutes] = timeParts;
-    const cronDays = toCronDays(task.days);
-    const entry = `${parseInt(minutes!, 10)} ${parseInt(hours!, 10)} * * ${cronDays} ${task.command} ${TAG_PREFIX}${task.id}`;
+
+    let entry: string;
+    if (task.date) {
+      const [, m, d] = task.date.split('-');
+      entry = `${parseInt(minutes!, 10)} ${parseInt(hours!, 10)} ${parseInt(d!, 10)} ${parseInt(m!, 10)} * ${task.command} ${TAG_PREFIX}${task.id}`;
+    } else {
+      const cronDays = toCronDays(task.days);
+      entry = `${parseInt(minutes!, 10)} ${parseInt(hours!, 10)} * * ${cronDays} ${task.command} ${TAG_PREFIX}${task.id}`;
+    }
 
     let crontab = getCurrentCrontab();
-    // Remove existing entry for this ID
     crontab = crontab.split('\n').filter(l => !l.includes(`${TAG_PREFIX}${task.id}`)).join('\n');
     crontab = crontab.trimEnd() + '\n' + entry + '\n';
     writeCrontab(crontab);

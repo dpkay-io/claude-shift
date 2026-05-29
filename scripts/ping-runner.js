@@ -99,6 +99,20 @@ function loadPingMessage(config) {
   return 'ping';
 }
 
+function disableOnceTrigger(triggerId) {
+  try {
+    const config = loadConfig();
+    if (!config || !Array.isArray(config.triggers)) return;
+    const trigger = config.triggers.find(t => t.id === triggerId);
+    if (!trigger || !trigger.date) return;
+    trigger.enabled = false;
+    const tmpFile = CONFIG_FILE + '.tmp';
+    fs.writeFileSync(tmpFile, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+    fs.renameSync(tmpFile, CONFIG_FILE);
+    log(`ONCE trigger=${triggerId} auto-disabled after execution`);
+  } catch {}
+}
+
 function sanitizeLog(s) {
   return String(s).replace(/[\n\r]/g, ' ').replace(/"/g, "'");
 }
@@ -148,6 +162,7 @@ async function main() {
       const resp = responseOutput ? extractResponse(responseOutput, message) : '';
       const respPart = resp ? ` response="${sanitizeLog(resp)}"` : '';
       log(`PING trigger=${triggerId} status=success detail="timeout after ${duration}ms — session was started"${respPart}`);
+      disableOnceTrigger(triggerId);
       releaseLock();
       process.exit(0);
     }, 30000);
@@ -182,6 +197,7 @@ async function main() {
       const resp = responseOutput ? extractResponse(responseOutput, message) : '';
       const respPart = resp ? ` response="${sanitizeLog(resp)}"` : '';
       log(`PING trigger=${triggerId} status=${ok ? 'success' : 'error'} detail="exit=${exitCode} duration=${duration}ms"${respPart}`);
+      if (ok) disableOnceTrigger(triggerId);
       releaseLock();
       process.exit(ok ? 0 : 1);
     });

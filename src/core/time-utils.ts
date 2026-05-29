@@ -105,3 +105,50 @@ export function formatDays(days: DayOfWeek[]): string {
   if (sorted.length === 2 && sorted.every(d => ['sat', 'sun'].includes(d))) return 'weekends';
   return sorted.map(dayShort).join(', ');
 }
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export function parseDate(input: string): string {
+  const match = input.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) throw new Error(`Invalid date format: "${input}" (expected YYYY-MM-DD)`);
+  const [, y, m, d] = match;
+  const date = new Date(parseInt(y!, 10), parseInt(m!, 10) - 1, parseInt(d!, 10));
+  if (isNaN(date.getTime())) throw new Error(`Invalid date: "${input}"`);
+  return `${y}-${m}-${d}`;
+}
+
+export function formatDateShort(date: string): string {
+  const [y, m, d] = date.split('-').map(Number);
+  return `${MONTH_NAMES[m! - 1]} ${d}, ${y}`;
+}
+
+export function todayDateString(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export function dateToDayOfWeek(date: string): DayOfWeek {
+  const dayNames: DayOfWeek[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  const [y, m, d] = date.split('-').map(Number);
+  const dt = new Date(y!, m! - 1, d!);
+  return dayNames[dt.getDay()]!;
+}
+
+export function getWeekDates(): string[] {
+  const now = new Date();
+  const dow = now.getDay();
+  const mondayOffset = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + mondayOffset);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  });
+}

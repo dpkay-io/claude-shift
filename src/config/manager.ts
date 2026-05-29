@@ -40,7 +40,8 @@ function isValidTrigger(t: unknown): t is Trigger {
     && typeof obj.time === 'string'
     && Array.isArray(obj.days)
     && typeof obj.enabled === 'boolean'
-    && (obj.source === 'manual' || obj.source === 'smart');
+    && (obj.source === 'manual' || obj.source === 'smart')
+    && (obj.date === undefined || typeof obj.date === 'string');
 }
 
 function isValidSmartConfig(s: unknown): boolean {

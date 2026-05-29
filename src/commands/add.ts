@@ -1,13 +1,24 @@
 import { loadConfig, saveConfig, addTrigger } from '../config/manager.js';
-import { parseTime, parseDays, formatTime12h, formatDays } from '../core/time-utils.js';
+import { parseTime, parseDays, parseDate, formatTime12h, formatDays, formatDateShort, todayDateString } from '../core/time-utils.js';
 import type { DayOfWeek } from '../config/schema.js';
 import * as display from '../utils/display.js';
 
-export function addCommand(time: string, options: { days?: string }): void {
+export function addCommand(time: string, options: { days?: string; once?: string | true }): void {
   let days: DayOfWeek[];
+  let date: string | undefined;
   try {
-    parseTime(time); // validate
-    days = options.days ? parseDays(options.days) : parseDays('weekdays');
+    parseTime(time);
+    if (options.once !== undefined) {
+      if (options.days && options.days !== 'weekdays') {
+        display.error('Cannot use --once with --days.');
+        process.exitCode = 1;
+        return;
+      }
+      date = typeof options.once === 'string' ? parseDate(options.once) : todayDateString();
+      days = [];
+    } else {
+      days = options.days ? parseDays(options.days) : parseDays('weekdays');
+    }
   } catch (e) {
     display.error(e instanceof Error ? e.message : String(e));
     process.exitCode = 1;
@@ -20,10 +31,15 @@ export function addCommand(time: string, options: { days?: string }): void {
     days,
     source: 'manual',
     enabled: true,
+    ...(date ? { date } : {}),
   });
 
   saveConfig(config);
 
-  display.success(`Trigger ${trigger.id} added: ping at ${formatTime12h(parseTime(time))} on ${formatDays(days)}`);
+  if (date) {
+    display.success(`Trigger ${trigger.id} added: one-time ping at ${formatTime12h(parseTime(time))} on ${formatDateShort(date)}`);
+  } else {
+    display.success(`Trigger ${trigger.id} added: ping at ${formatTime12h(parseTime(time))} on ${formatDays(days)}`);
+  }
   display.info('Run `claude-shift install` to activate with your OS scheduler.');
 }

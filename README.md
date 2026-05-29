@@ -1,22 +1,94 @@
 # claude-shift
 
-Optimize your Claude Max 5-hour usage slots by scheduling strategic session pings. Pre-burn slots during idle hours (sleep, commute, office) so fresh slots align with your actual working hours.
+**Always have a fresh Claude session when you start working.**
+
+Stop hitting usage limits mid-flow. **claude-shift** aligns your Claude Max 5-hour windows with your actual schedule — automatically, in the background.
+
+## The problem
+
+Claude Max runs on a **5-hour usage window**. The moment you send a message, a 5-hour timer starts. When it expires, you get a fresh window. Simple enough — until you realize **you don't control when the timer starts.**
+
+A casual question at 7am means your window expires at noon. If you're deep in work from 9am to 2pm, your session resets right in the middle of it.
+
+```
+Without claude-shift:
+
+  7:00 AM   Quick Claude question                ← 5h timer starts
+  9:00 AM   Deep work begins                     ← only 3h left
+ 12:00 PM   Window expires mid-work              ← flow broken ✗
+```
+
+This happens every day. Your window boundaries drift based on whenever you last used Claude, and they inevitably land at the worst possible moment.
+
+**You're paying $100-200/month for Claude Max.** Random resets shouldn't dictate when you can use it.
+
+## The solution
+
+**claude-shift** pings Claude automatically during your downtime — while you sleep, commute, or sit in meetings. This burns through a window cycle during hours you don't care about, so a **fresh 5-hour window is ready when you actually sit down to work.**
+
+```
+With claude-shift:
+
+  4:00 AM   Auto-ping fires (you're asleep)      ← starts a window cycle
+  9:00 AM   Old window expired, fresh one starts  ← full 5h available ✓
+  2:00 PM   Uninterrupted deep work
+```
+
+**Tell it your work hours. It calculates the optimal ping times. Your OS runs them automatically.**
 
 ![claude-shift CLI](https://raw.githubusercontent.com/dpkay-io/claude-shift/main/cli.png)
 
-## Why?
+## Install
 
-Claude Max gives you 5-hour usage windows. When a slot ends, a new one is available immediately. But if you just start working whenever, your slot boundaries land randomly — you might hit a slot expiry mid-flow.
+```bash
+npm install -g claude-shift
+```
 
-**claude-shift** lets you control when slots start and end by pinging Claude at strategic times. For isolated work windows, a ping fires right at the start — giving you a fresh slot with zero waste. For consecutive windows close together, a single pre-burn ping aligns the slot boundary so a fresh slot is ready for the next work block.
+Requires Node.js 18+ and [Claude CLI](https://claude.ai/download).
 
-## Example
+## Quick start
 
-Say you work 6:30–8am, 9–11am, and 8–11pm on weekdays:
+Interactive setup:
+
+```bash
+claude-shift init
+```
+
+Or configure directly — tell it when you work, and let it do the math:
+
+```bash
+# Set your work schedule
+claude-shift smart --slots "09:00-14:00,20:00-23:00" --days weekdays
+
+# Register with your OS scheduler
+claude-shift install
+
+# See your weekly timeline
+claude-shift week
+```
+
+Done. Pings fire automatically every day before your work blocks.
+
+## How it works
+
+1. **You define when you work** — provide your work windows (smart mode) or exact ping times (manual mode)
+2. **claude-shift calculates** when to fire pings so that fresh 5h windows line up with your work blocks
+3. **Your OS scheduler runs the pings** — each one briefly opens Claude CLI, sends a message, and exits
+
+That's it. No daemon, no background process. Just your OS's native scheduler doing its job:
+- **Windows** — Task Scheduler (`schtasks`)
+- **macOS** — launchd (`~/Library/LaunchAgents`)
+- **Linux** — cron (`crontab`)
+
+## Smart mode (recommended)
+
+Tell claude-shift when you work. It figures out the rest:
+
+```bash
+claude-shift smart --slots "06:30-08:00,09:00-11:00,20:00-23:00" --days weekdays
+```
 
 ```
-$ claude-shift smart --slots "06:30-08:00,09:00-11:00,20:00-23:00" --days weekdays
-
 Smart mode calculation:
   Slot duration: 5h | Burn rate: 2h
 
@@ -27,135 +99,89 @@ Smart mode calculation:
 
   Calculated pings:
     Ping at 04:00 → slot 04:00–09:00 for your 06:30–11:00 window
-    Ping at 20:00 → slot 20:00–01:00 for your 20:00–23:00 window
+    Ping at 17:00 → slot 17:00–22:00 for your 20:00–23:00 window
 
 ✓ 2 smart trigger(s) configured.
+ℹ Run `claude-shift install` to activate with your OS scheduler.
 ```
 
-Visual timeline:
-
-```
-  Schedule Timeline
-
-      00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23
-      |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-  Mon             ⚡──────────────                                 ⚡──────────
-                       ████   ██████                           █████████
-  Tue             ⚡──────────────                                 ⚡──────────
-                       ████   ██████                           █████████
-
-  ⚡ ping  ─ slot (5h)  █ work window
-```
-
-## Install
-
-```bash
-npm install -g claude-shift
-```
-
-Requires Node.js 18+ and [Claude CLI](https://claude.ai/download) installed.
-
-## Quick start
-
-Interactive setup:
-
-```bash
-claude-shift init
-```
-
-This walks you through configuring your work hours, detects your Claude CLI, and registers pings with your OS scheduler.
-
-## Usage
-
-### Smart mode (recommended)
-
-Tell claude-shift when you work, it calculates optimal ping times:
-
-```bash
-claude-shift smart --slots "08:00-13:00,20:00-23:00" --days weekdays
-```
+Your two morning blocks (6:30–8am and 9–11am) are close together, so **one ping at 4am covers both**. The slot runs 4–9am, then a fresh one kicks in at 9am for your second block. Your evening window gets a pre-burn ping at 5pm — the slot ticks through your downtime so a fresh window renews at 10pm.
 
 Options:
-- `-s, --slots` — Your work windows (HH:mm-HH:mm, comma-separated)
+- `-s, --slots` — Work windows (`HH:mm-HH:mm`, comma-separated)
 - `-d, --days` — Days to apply (`weekdays`, `weekends`, `daily`, `mon-fri`, `mon,wed,fri`)
-- `-b, --burn-rate` — How long a slot typically lasts for you in hours (default: 2)
+- `-b, --burn-rate` — How long a window typically lasts for you, in hours (default: 2)
+- `-y, --yes` — Skip confirmation prompt
 
-### Manual mode
+## Manual mode
 
-Specify exact ping times:
+Set exact ping times yourself:
 
 ```bash
 claude-shift add 03:00 --days weekdays
 claude-shift add 16:30 --days mon,wed,fri
+claude-shift add 06:00 --once             # One-time trigger for today
+claude-shift add 06:00 --once 2025-01-15  # One-time trigger for a specific date
 ```
 
-### Activate
-
-After configuring triggers, register them with your OS scheduler:
-
-```bash
-claude-shift install
-```
-
-This uses the native scheduler for your platform:
-- **Windows** — Task Scheduler (`schtasks`)
-- **macOS** — launchd (plist in `~/Library/LaunchAgents`)
-- **Linux** — cron (`crontab`)
-
-### View your schedule
+## View your schedule
 
 ```bash
 claude-shift today    # Today's timeline
 claude-shift week     # Full week view
 claude-shift list     # All configured triggers
-claude-shift status   # Scheduler status + recent ping logs
+claude-shift status   # Scheduler status + ping logs
 ```
 
-### Manage triggers
+Weekly timeline output:
+
+```
+  Schedule Timeline
+
+      00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+      ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵  ╵
+
+  Mon █████████   ⚡██████████████●██████████████         ⚡██████████████●█████
+
+  Tue █████████   ⚡██████████████●██████████████         ⚡██████████████●█████
+
+  ⚡ ping  ● renew  █ work  █ slot (5h)
+```
+
+Colors in your terminal distinguish work windows (green) from slot coverage (gray).
+
+## Manage triggers
 
 ```bash
 claude-shift remove 001   # Remove a trigger by ID
-claude-shift uninstall          # Remove all from OS scheduler
+claude-shift uninstall    # Remove all from OS scheduler
+claude-shift run          # Test a ping right now
 ```
-
-### Test a ping
-
-```bash
-claude-shift run    # Fire a ping right now
-```
-
-## How it works
-
-1. **You configure** when you want to work (smart mode) or when to ping (manual mode)
-2. **claude-shift calculates** optimal ping times — at your work start for isolated windows, or a single pre-burn for consecutive windows
-3. **Your OS scheduler** fires the pings at the right times
-4. **Each ping** opens an interactive Claude session via a pseudo-TTY, sends a message, and exits
-5. **For isolated windows**, the ping starts a fresh slot right when you begin work
-6. **For consecutive windows**, one pre-burn ping aligns the slot boundary so the next work block gets a fresh slot
 
 ## Configuration
 
-Config is stored at `~/.claude-shift/config.json`. Ping logs are at `~/.claude-shift/ping.log`.
+Config is stored at `~/.claude-shift/config.json`. Logs at `~/.claude-shift/ping.log`.
 
-### Settings
+```bash
+claude-shift config get             # Show all settings
+claude-shift config set burnRate 3  # Update a setting
+```
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `slotDuration` | 5 | Claude Max slot duration in hours |
-| `burnRate` | 2 | How long a slot typically lasts for you |
-| `claudePath` | `claude` | Path to Claude CLI |
+| `slotDuration` | `5` | Claude Max window duration in hours |
+| `burnRate` | `2` | How long a window typically lasts for you (hours) |
+| `claudePath` | `claude` | Path to Claude CLI binary |
+| `nodePath` | *(auto-detected)* | Path to Node.js binary |
 | `pingMessage` | `ping` | Message sent to start the session |
 
 ## Platform notes
 
-### Windows
-Tasks run "only when user is logged on". For overnight pings (e.g., 3am), your machine needs to be awake and logged in. Consider disabling sleep or using wake timers.
+**Windows** — Tasks run when you're logged in. For overnight pings (e.g., 4am), your machine must be awake. Consider disabling sleep or using wake timers.
 
-### macOS
-launchd handles wake-from-sleep scheduling natively. Pings will fire even if your Mac was asleep at the scheduled time (it fires on next wake).
+**macOS** — launchd fires missed pings on next wake. Overnight pings work even if your Mac was asleep.
 
-### Linux
-cron entries use absolute paths to avoid PATH issues in the cron environment.
+**Linux** — cron uses absolute paths to avoid PATH issues in the cron environment.
 
 ## License
 
