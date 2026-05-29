@@ -4,38 +4,6 @@
 
 Stop hitting usage limits mid-flow. **claude-shift** aligns your Claude Max 5-hour windows with your actual schedule — automatically, in the background.
 
-## The problem
-
-Claude Max runs on a **5-hour usage window**. The moment you send a message, a 5-hour timer starts. When it expires, you get a fresh window. Simple enough — until you realize **you don't control when the timer starts.**
-
-A casual question at 7am means your window expires at noon. If you're deep in work from 9am to 2pm, your session resets right in the middle of it.
-
-```
-Without claude-shift:
-
-  7:00 AM   Quick Claude question                ← 5h timer starts
-  9:00 AM   Deep work begins                     ← only 3h left
- 12:00 PM   Window expires mid-work              ← flow broken ✗
-```
-
-This happens every day. Your window boundaries drift based on whenever you last used Claude, and they inevitably land at the worst possible moment.
-
-**You're paying $100-200/month for Claude Max.** Random resets shouldn't dictate when you can use it.
-
-## The solution
-
-**claude-shift** pings Claude automatically during your downtime — while you sleep, commute, or sit in meetings. This burns through a window cycle during hours you don't care about, so a **fresh 5-hour window is ready when you actually sit down to work.**
-
-```
-With claude-shift:
-
-  4:00 AM   Auto-ping fires (you're asleep)      ← starts a window cycle
-  9:00 AM   Old window expired, fresh one starts  ← full 5h available ✓
-  2:00 PM   Uninterrupted deep work
-```
-
-**Tell it your work hours. It calculates the optimal ping times. Your OS runs them automatically.**
-
 ![claude-shift CLI](https://raw.githubusercontent.com/dpkay-io/claude-shift/main/cli.png)
 
 ## Install
@@ -68,6 +36,38 @@ claude-shift week
 ```
 
 Done. Pings fire automatically every day before your work blocks.
+
+## The problem
+
+Claude Max runs on a **5-hour usage window**. The moment you send a message, a 5-hour timer starts. When it expires, you get a fresh window. Simple enough — until you realize **you don't control when the timer starts.**
+
+A casual question at 7am means your window expires at noon. If you're deep in work from 9am to 2pm, your session resets right in the middle of it.
+
+```
+Without claude-shift:
+
+  7:00 AM   Quick Claude question                ← 5h timer starts
+  9:00 AM   Deep work begins                     ← only 3h left
+ 12:00 PM   Window expires mid-work              ← flow broken ✗
+```
+
+This happens every day. Your window boundaries drift based on whenever you last used Claude, and they inevitably land at the worst possible moment.
+
+**You're paying $100-200/month for Claude Max.** Random resets shouldn't dictate when you can use it.
+
+## The solution
+
+**claude-shift** pings Claude automatically during your downtime — while you sleep, commute, or sit in meetings. This burns through a window cycle during hours you don't care about, so a **fresh 5-hour window is ready when you actually sit down to work.**
+
+```
+With claude-shift:
+
+  4:00 AM   Auto-ping fires (you're asleep)      ← starts a window cycle
+  9:00 AM   Old window expired, fresh one starts  ← full 5h available ✓
+  2:00 PM   Uninterrupted deep work
+```
+
+**Tell it your work hours. It calculates the optimal ping times. Your OS runs them automatically.**
 
 ## How it works
 
@@ -105,7 +105,7 @@ Smart mode calculation:
 ℹ Run `claude-shift install` to activate with your OS scheduler.
 ```
 
-Your two morning blocks (6:30–8am and 9–11am) are close together, so **one ping at 4am covers both**. The slot runs 4–9am, then a fresh one kicks in at 9am for your second block. Your evening window gets a pre-burn ping at 5pm — the slot ticks through your downtime so a fresh window renews at 10pm.
+Your two morning blocks (6:30–8am and 9–11am) are close together, so **one ping at 4am covers both**. The slot runs 4–9am, then a fresh one kicks in at 9am for your second block. Your evening window gets a pre-burn ping at 5pm — the slot ticks through your downtime so a fresh window renews at 10pm. This is intentional: you use the tail end of the first slot from 8–10pm (matching your 2-hour burn rate limit), and right as you might hit your usage limit, a fresh window starts at 10pm to carry you through the rest of your session.
 
 Options:
 - `-s, --slots` — Work windows (`HH:mm-HH:mm`, comma-separated)
@@ -155,7 +155,7 @@ Colors in your terminal distinguish work windows (green) from slot coverage (gra
 ```bash
 claude-shift remove 001   # Remove a trigger by ID
 claude-shift uninstall    # Remove all from OS scheduler
-claude-shift run          # Test a ping right now
+claude-shift ping         # Test a ping right now
 ```
 
 ## Configuration

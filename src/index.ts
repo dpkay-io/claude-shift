@@ -10,7 +10,7 @@ import { removeCommand } from './commands/remove.js';
 import { installCommand } from './commands/install.js';
 import { uninstallCommand } from './commands/uninstall.js';
 import { statusCommand } from './commands/status.js';
-import { runCommand } from './commands/run.js';
+import { pingCommand } from './commands/ping.js';
 import { todayCommand } from './commands/today.js';
 import { weekCommand } from './commands/week.js';
 import { configGetCommand, configSetCommand } from './commands/config.js';
@@ -70,9 +70,9 @@ program
   .action(statusCommand);
 
 program
-  .command('run')
+  .command('ping')
   .description('Execute a ping right now (for testing)')
-  .action(runCommand);
+  .action(pingCommand);
 
 program
   .command('today')

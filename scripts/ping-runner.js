@@ -82,6 +82,30 @@ function releaseLock() {
   try { fs.unlinkSync(LOCK_FILE); } catch {}
 }
 
+function commonClaudePaths() {
+  const home = os.homedir();
+  if (process.platform === 'win32') {
+    return [
+      path.join(home, 'AppData', 'Roaming', 'npm', 'claude.cmd'),
+      path.join(home, 'AppData', 'Local', 'Programs', 'claude-code', 'claude.exe'),
+    ];
+  }
+  if (process.platform === 'darwin') {
+    return [
+      '/usr/local/bin/claude',
+      '/opt/homebrew/bin/claude',
+      path.join(home, '.npm-global', 'bin', 'claude'),
+      path.join(home, '.local', 'bin', 'claude'),
+    ];
+  }
+  return [
+    '/usr/local/bin/claude',
+    '/usr/bin/claude',
+    path.join(home, '.npm-global', 'bin', 'claude'),
+    path.join(home, '.local', 'bin', 'claude'),
+  ];
+}
+
 function resolveExePath(name) {
   const cmd = process.platform === 'win32' ? 'where' : 'which';
   try {
@@ -111,9 +135,18 @@ function loadClaudePath(config) {
     if (p.includes(path.sep) || p.includes('/')) {
       return path.resolve(os.homedir(), p);
     }
-    return resolveExePath(p);
+    const resolved = resolveExePath(p);
+    if (resolved !== p) return resolved;
+  } else {
+    const resolved = resolveExePath('claude');
+    if (resolved !== 'claude') return resolved;
   }
-  return resolveExePath('claude');
+
+  for (const candidate of commonClaudePaths()) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  return 'claude';
 }
 
 function loadPingMessage(config) {
@@ -360,6 +393,10 @@ async function main() {
 
     if (!claudePath || SHELL_META.test(claudePath)) {
       throw new Error(`Invalid claudePath: "${claudePath}"`);
+    }
+
+    if (!path.isAbsolute(claudePath) && !fs.existsSync(claudePath)) {
+      log(`PING trigger=${triggerId} status=warn detail="Claude not found via PATH or common locations. Fix with: claude-shift config set claudePath /absolute/path/to/claude"`);
     }
 
     let done = false;

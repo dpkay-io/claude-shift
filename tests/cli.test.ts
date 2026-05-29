@@ -80,7 +80,7 @@ describe('CLI E2E', () => {
       const r = cli('--help');
       expect(r.exitCode).toBe(0);
       expect(r.stdout).toContain('Usage:');
-      for (const cmd of ['init', 'add', 'smart', 'list', 'remove', 'install', 'uninstall', 'status', 'run', 'today', 'week', 'config']) {
+      for (const cmd of ['init', 'add', 'smart', 'list', 'remove', 'install', 'uninstall', 'status', 'ping', 'today', 'week', 'config']) {
         expect(r.stdout).toContain(cmd);
       }
     });

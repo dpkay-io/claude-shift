@@ -2,7 +2,7 @@ import { loadConfig } from '../config/manager.js';
 import { executePing } from '../core/ping.js';
 import * as display from '../utils/display.js';
 
-export async function runCommand(): Promise<void> {
+export async function pingCommand(): Promise<void> {
   const config = loadConfig();
   display.info('Sending ping to Claude...');
 
