@@ -2,6 +2,7 @@ import { loadConfig, saveConfig, addTrigger } from '../config/manager.js';
 import { parseTime, parseDays, parseDate, formatTime12h, formatDays, formatDateShort, todayDateString } from '../core/time-utils.js';
 import type { DayOfWeek } from '../config/schema.js';
 import * as display from '../utils/display.js';
+import { toErrorMessage } from '../utils/text.js';
 
 export function addCommand(time: string, options: { days?: string; once?: string | true }): void {
   let days: DayOfWeek[];
@@ -20,7 +21,7 @@ export function addCommand(time: string, options: { days?: string; once?: string
       days = options.days ? parseDays(options.days) : parseDays('weekdays');
     }
   } catch (e) {
-    display.error(e instanceof Error ? e.message : String(e));
+    display.error(toErrorMessage(e));
     process.exitCode = 1;
     return;
   }

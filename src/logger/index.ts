@@ -1,13 +1,8 @@
 import fs from 'node:fs';
-import path from 'node:path';
-import { CONFIG_DIR } from '../config/defaults.js';
+import { CONFIG_DIR, LOG_FILE } from '../config/defaults.js';
 
 const MAX_LOG_SIZE = 1024 * 1024; // 1MB
 const KEEP_LINES = 500;
-
-function logPath(): string {
-  return path.join(CONFIG_DIR, 'ping.log');
-}
 
 function rotateIfNeeded(filePath: string): void {
   try {
@@ -34,7 +29,7 @@ function formatLocalTime(date: Date): string {
 
 export function logPing(triggerId: string, status: 'success' | 'error', detail?: string, response?: string): void {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  const filePath = logPath();
+  const filePath = LOG_FILE;
   rotateIfNeeded(filePath);
   const localTime = formatLocalTime(new Date());
   const extra = detail ? ` detail="${sanitize(detail).slice(0, 500)}"` : '';
@@ -44,7 +39,7 @@ export function logPing(triggerId: string, status: 'success' | 'error', detail?:
 }
 
 export function readRecentLogs(count: number = 20): string[] {
-  const filePath = logPath();
+  const filePath = LOG_FILE;
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n').filter(l => l.trim());

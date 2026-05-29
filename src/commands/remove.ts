@@ -1,6 +1,7 @@
 import { loadConfig, saveConfig, removeTrigger } from '../config/manager.js';
 import { createScheduler } from '../scheduler/factory.js';
 import * as display from '../utils/display.js';
+import { toErrorMessage } from '../utils/text.js';
 
 export async function removeCommand(id: string): Promise<void> {
   const config = loadConfig();
@@ -17,7 +18,7 @@ export async function removeCommand(id: string): Promise<void> {
     const scheduler = createScheduler();
     await scheduler.remove(id);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = toErrorMessage(err);
     if (msg.includes('not found') || msg.includes('does not exist') || msg.includes('No such file')) {
       // Not installed in scheduler — that's fine
     } else {

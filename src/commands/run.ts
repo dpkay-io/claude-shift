@@ -13,6 +13,9 @@ export async function runCommand(): Promise<void> {
 
   if (result.success) {
     display.success(`Ping completed in ${(result.duration / 1000).toFixed(1)}s`);
+    if (result.response) {
+      console.log(`  Response: ${result.response}`);
+    }
   } else {
     display.error(`Ping failed: ${result.error}`);
     process.exitCode = 1;

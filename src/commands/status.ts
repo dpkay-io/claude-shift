@@ -1,7 +1,6 @@
 import { loadConfig } from '../config/manager.js';
 import { createScheduler } from '../scheduler/factory.js';
 import { readRecentLogs } from '../logger/index.js';
-import { printTriggerTable } from '../utils/display.js';
 import * as display from '../utils/display.js';
 import chalk from 'chalk';
 
@@ -28,7 +27,7 @@ export async function statusCommand(): Promise<void> {
   console.log();
   console.log(chalk.bold('Configured triggers:'));
   console.log();
-  printTriggerTable(config.triggers, installed);
+  display.printTriggerTable(config.triggers, installed);
 
   // Show installed tasks
   console.log();

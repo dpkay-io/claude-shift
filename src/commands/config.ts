@@ -17,6 +17,28 @@ const NUMERIC_KEYS: (keyof Settings)[] = ['slotDuration', 'burnRate'];
 const BOOLEAN_KEYS: (keyof Settings)[] = ['retryEnabled'];
 const ARRAY_NUMERIC_KEYS: (keyof Settings)[] = ['retryIntervals'];
 
+function parseSetting(key: keyof Settings, value: string): { parsed: unknown } | { error: string } {
+  if (BOOLEAN_KEYS.includes(key)) {
+    if (value !== 'true' && value !== 'false') return { error: `${key} must be true or false.` };
+    return { parsed: value === 'true' };
+  }
+  if (ARRAY_NUMERIC_KEYS.includes(key)) {
+    const nums = value.split(',').map(s => parseInt(s.trim(), 10));
+    if (nums.some(n => isNaN(n) || n <= 0)) return { error: `${key} must be comma-separated positive integers (e.g., 5,15,30,45,60).` };
+    return { parsed: nums.sort((a, b) => a - b) };
+  }
+  if (NUMERIC_KEYS.includes(key)) {
+    const num = parseFloat(value);
+    if (isNaN(num) || num <= 0) return { error: `${key} must be a positive number.` };
+    return { parsed: num };
+  }
+  return { parsed: value };
+}
+
+function isSettableKey(key: string): key is keyof Settings {
+  return SETTABLE_KEYS.includes(key as keyof Settings);
+}
+
 export function configGetCommand(key?: string): void {
   const config = loadConfig();
 
@@ -30,48 +52,30 @@ export function configGetCommand(key?: string): void {
     return;
   }
 
-  if (!SETTABLE_KEYS.includes(key as keyof Settings)) {
+  if (!isSettableKey(key)) {
     display.error(`Unknown setting: ${key}`);
     console.log(`  Available: ${SETTABLE_KEYS.join(', ')}`);
     return;
   }
 
-  console.log(`${key}: ${config.settings[key as keyof Settings]}`);
+  console.log(`${key}: ${config.settings[key]}`);
 }
 
 export function configSetCommand(key: string, value: string): void {
-  if (!SETTABLE_KEYS.includes(key as keyof Settings)) {
+  if (!isSettableKey(key)) {
     display.error(`Unknown setting: ${key}`);
     console.log(`  Available: ${SETTABLE_KEYS.join(', ')}`);
     return;
   }
 
   const config = loadConfig();
-
-  if (BOOLEAN_KEYS.includes(key as keyof Settings)) {
-    if (value !== 'true' && value !== 'false') {
-      display.error(`${key} must be true or false.`);
-      return;
-    }
-    ((config.settings as unknown) as Record<string, unknown>)[key] = value === 'true';
-  } else if (ARRAY_NUMERIC_KEYS.includes(key as keyof Settings)) {
-    const nums = value.split(',').map(s => parseInt(s.trim(), 10));
-    if (nums.some(n => isNaN(n) || n <= 0)) {
-      display.error(`${key} must be comma-separated positive integers (e.g., 5,15,30,45,60).`);
-      return;
-    }
-    ((config.settings as unknown) as Record<string, unknown>)[key] = nums.sort((a, b) => a - b);
-  } else if (NUMERIC_KEYS.includes(key as keyof Settings)) {
-    const num = parseFloat(value);
-    if (isNaN(num) || num <= 0) {
-      display.error(`${key} must be a positive number.`);
-      return;
-    }
-    ((config.settings as unknown) as Record<string, unknown>)[key] = num;
-  } else {
-    ((config.settings as unknown) as Record<string, unknown>)[key] = value;
+  const result = parseSetting(key, value);
+  if ('error' in result) {
+    display.error(result.error);
+    return;
   }
 
+  (config.settings as unknown as Record<string, unknown>)[key] = result.parsed;
   saveConfig(config);
   display.success(`${key} = ${value}`);
 }

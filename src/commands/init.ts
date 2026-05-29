@@ -5,7 +5,7 @@ import { parseDays, parseTime } from '../core/time-utils.js';
 import { smartCommand } from './smart.js';
 import { installCommand } from './install.js';
 import * as display from '../utils/display.js';
-import { printTriggerTable } from '../utils/display.js';
+import { toErrorMessage } from '../utils/text.js';
 import chalk from 'chalk';
 
 async function ask(rl: readline.Interface, question: string, fallback?: string): Promise<string> {
@@ -90,7 +90,7 @@ export async function initCommand(): Promise<void> {
           count++;
           display.success(`Added trigger at ${time}`);
         } catch (e) {
-          display.error(e instanceof Error ? e.message : String(e));
+          display.error(toErrorMessage(e));
         }
       }
       rl.close();
@@ -105,7 +105,7 @@ export async function initCommand(): Promise<void> {
       console.log();
       console.log(chalk.bold('Configured triggers:'));
       console.log();
-      printTriggerTable(finalConfig.triggers);
+      display.printTriggerTable(finalConfig.triggers);
     }
 
     // Offer to install

@@ -1,6 +1,6 @@
 {
   "name": "claude-shift",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Optimize your Claude Max 5-hour slots by scheduling strategic session pings",
   "type": "module",
   "bin": {
@@ -13,8 +13,10 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --exclude tests/cli.test.ts",
+    "test:watch": "vitest --exclude tests/cli.test.ts",
+    "test:e2e": "tsc && vitest run tests/cli.test.ts",
+    "test:all": "tsc && vitest run",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

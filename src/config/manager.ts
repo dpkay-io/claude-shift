@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Config, Trigger, DayOfWeek } from './schema.js';
+import type { Config, Trigger, SmartConfig, DayOfWeek } from './schema.js';
 import { CONFIG_DIR, CONFIG_FILE, defaultConfig, defaultSettings } from './defaults.js';
 
 function ensureDir(): void {
@@ -107,6 +107,10 @@ export function clearSmartTriggers(config: Config, days?: DayOfWeek[]): number {
     return !hasOverlap;
   });
   return before - config.triggers.length;
+}
+
+export function getSmartConfigs(config: Config): SmartConfig[] {
+  return config.smart ?? [];
 }
 
 export function getConfigDir(): string {

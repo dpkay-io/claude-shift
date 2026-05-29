@@ -26,13 +26,39 @@ function log(msg) {
   fs.appendFileSync(LOG_FILE, `[${formatLocalTime(new Date())}] ${safe}\n`, 'utf-8');
 }
 
-const ANSI_RE = /\x1B(?:\[[0-9;]*[a-zA-Z]|\][^\x07]*\x07|\(B)/g;
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /[\x1B\x9B][[\]()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nq-uy=><~]/g;
+const TRUST_RE = /trust\s*this\s*folder/i;
 
 function extractResponse(rawOutput, message) {
   let cleaned = rawOutput.replace(ANSI_RE, '');
   const msgIdx = cleaned.indexOf(message);
   if (msgIdx !== -1) cleaned = cleaned.slice(msgIdx + message.length);
-  cleaned = cleaned.replace(/\/exit/g, '').replace(/[>❯]\s*/g, '').replace(/\s+/g, ' ').trim();
+  cleaned = cleaned
+    .replace(/─+/g, '')
+    .replace(/Resume this session with:.*$/gm, '')
+    .replace(/claude\s+--resume\s+[\w-]+/g, '')
+    .replace(/\d+\s*claude\.ai\s*connector.*?\/mcp/gi, '')
+    .replace(/ctx:\d+%[^·]*?·\/effort/g, '')
+    .replace(/\d+h:\d+%@[\w:.]+/g, '')
+    .replace(/\d+d:\d+%@[\w:.]+/g, '')
+    .replace(/[⠂⠐⠈⠑⠃]?\s*Claude Code\x07?/g, '')
+    .replace(/[✻✳;]?\s*\w+(?:ed|ing)\s+for\s+\d+s/g, '')
+    .replace(/\(\d+s\s*·\s*↓\s*\d+\s*tokens?\)/g, '')
+    .replace(/(?:bypass\s*permissions?\s*on|shift\+tab\s*to\s*cycle)/gi, '')
+    .replace(/[⏵●❯✻✳;]\s*/g, '')
+    .replace(/~[\\/][\w\\/.-]+/g, '')
+    .replace(/opus-\d+-\d+/g, '')
+    .replace(/·\/effort/g, '')
+    .replace(/\bhigh\b|\blow\b|\bmedium\b|\bmain\b/g, '')
+    .replace(/\bX{1,2}\b/g, '')
+    .replace(/\w+…/g, '')
+    .replace(/u\d[u;][\d;a-z]*/gi, '')
+    .replace(/\x07/g, '')
+    .replace(/\/exit/g, '')
+    .replace(/\(\s*\)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return cleaned.slice(0, 500);
 }
 
@@ -347,7 +373,12 @@ async function main() {
     let output = '';
     let responseOutput = '';
     let sentMessage = false;
-    let sentExit = false;
+    let trustSeen = false;
+    let readyTimer = null;
+
+    function stripAnsi(s) {
+      return s.replace(ANSI_RE, '');
+    }
 
     const timeout = setTimeout(() => {
       if (done) return;
@@ -360,26 +391,41 @@ async function main() {
       disableOnceTrigger(triggerId);
       releaseLock();
       process.exit(0);
-    }, 30000);
+    }, 60000);
+
+    function scheduleMessage(delayMs) {
+      if (readyTimer || sentMessage || done) return;
+      readyTimer = setTimeout(() => {
+        if (done || sentMessage) return;
+        sentMessage = true;
+        responseOutput = '';
+        proc.write(message + '\r');
+        setTimeout(() => {
+          if (done) return;
+          proc.write('/exit\r');
+        }, 12000);
+      }, delayMs);
+    }
 
     proc.onData((data) => {
       if (output.length > 1_000_000) return;
       output += data;
       if (sentMessage) responseOutput += data;
-      const clean = output.replace(ANSI_RE, '');
-      if (!sentMessage && (clean.endsWith('> ') || clean.endsWith('>') || clean.endsWith('❯ ') || clean.includes('\n> '))) {
-        sentMessage = true;
+      const clean = stripAnsi(output);
+
+      if (!trustSeen && TRUST_RE.test(clean)) {
+        trustSeen = true;
+        if (readyTimer) { clearTimeout(readyTimer); readyTimer = null; }
         setTimeout(() => {
           if (done) return;
-          proc.write(message + '\r');
-        }, 1000);
+          proc.write('\r');
+          scheduleMessage(5000);
+        }, 500);
+        return;
       }
-      if (sentMessage && !sentExit && responseOutput.length > 50) {
-        sentExit = true;
-        setTimeout(() => {
-          if (done) return;
-          proc.write('/exit\r');
-        }, 2000);
+
+      if (!trustSeen && !sentMessage && clean.length > 200) {
+        scheduleMessage(5000);
       }
     });
 

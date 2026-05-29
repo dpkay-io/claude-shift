@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import type { DayOfWeek } from '../config/schema.js';
 import type { SchedulerBackend, ScheduledTask, InstalledTask, SchedulerCheckResult } from './types.js';
+import { toErrorMessage } from '../utils/text.js';
 
 const TASK_PREFIX = 'claude-shift-';
 
@@ -88,7 +89,7 @@ export class SchtasksScheduler implements SchedulerBackend {
       schtasks('/query', '/fo', 'CSV', '/nh');
       return { available: true };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '';
+      const msg = toErrorMessage(err);
       if (msg.includes('Access is denied')) {
         return { available: false, reason: 'Access denied. Try running as administrator.' };
       }

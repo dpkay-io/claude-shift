@@ -5,6 +5,7 @@ import { loadConfig } from '../config/manager.js';
 import { createScheduler } from '../scheduler/factory.js';
 import { isClaudeInstalled, findClaude } from '../utils/claude-check.js';
 import * as display from '../utils/display.js';
+import { SHELL_META, toErrorMessage } from '../utils/text.js';
 
 export async function installCommand(): Promise<void> {
   const config = loadConfig();
@@ -38,7 +39,6 @@ export async function installCommand(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  const SHELL_META = /[;&|`${}[\]!#~<>*?\n\r]/;
   const nodePath = config.settings.nodePath;
 
   if (SHELL_META.test(nodePath)) {
@@ -73,7 +73,7 @@ export async function installCommand(): Promise<void> {
       display.success(`${trigger.id}: ${schedule}`);
       installed++;
     } catch (err) {
-      display.error(`${trigger.id}: ${err instanceof Error ? err.message : String(err)}`);
+      display.error(`${trigger.id}: ${toErrorMessage(err)}`);
       failed++;
     }
   }

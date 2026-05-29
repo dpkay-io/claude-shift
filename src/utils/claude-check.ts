@@ -16,21 +16,8 @@ export function resolveExePath(name: string): string {
 }
 
 export function findClaude(): string | null {
-  try {
-    const cmd = detectPlatform() === 'windows' ? 'where' : 'which';
-    const result = execFileSync(cmd, ['claude'], { encoding: 'utf-8', timeout: 5000 });
-    const paths = result.trim().split('\n').map(s => s.trim()).filter(Boolean);
-
-    if (detectPlatform() === 'windows') {
-      // node-pty can only spawn real .exe files, not .cmd/.ps1/extensionless shims
-      const exe = paths.find(p => p.toLowerCase().endsWith('.exe'));
-      if (exe) return exe;
-    }
-
-    return paths[0] ?? null;
-  } catch {
-    return null;
-  }
+  const resolved = resolveExePath('claude');
+  return resolved === 'claude' ? null : resolved;
 }
 
 export function isClaudeInstalled(): boolean {

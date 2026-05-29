@@ -1,20 +1,11 @@
 import readline from 'node:readline/promises';
-import { loadConfig, saveConfig, addTrigger, clearSmartTriggers } from '../config/manager.js';
-import { parseDays, parseTime, formatTime12h, formatDays } from '../core/time-utils.js';
+import { loadConfig, saveConfig, addTrigger, clearSmartTriggers, getSmartConfigs } from '../config/manager.js';
+import { parseDays, parseTime, parseSlots, formatTime12h, formatDays } from '../core/time-utils.js';
 import { calculatePings, explainPing } from '../core/smart-calculator.js';
 import type { DayOfWeek, WorkWindow } from '../config/schema.js';
 import * as display from '../utils/display.js';
+import { toErrorMessage } from '../utils/text.js';
 import chalk from 'chalk';
-
-function parseSlots(input: string): WorkWindow[] {
-  return input.split(',').map(s => s.trim()).map(slot => {
-    const match = slot.match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
-    if (!match) throw new Error(`Invalid slot format: "${slot}" (expected HH:mm-HH:mm)`);
-    parseTime(match[1]!); // validate
-    parseTime(match[2]!);
-    return { start: match[1]!, end: match[2]! };
-  });
-}
 
 export async function smartCommand(options: { slots: string; days?: string; burnRate?: string; yes?: boolean }): Promise<void> {
   let windows: WorkWindow[];
@@ -23,7 +14,7 @@ export async function smartCommand(options: { slots: string; days?: string; burn
     windows = parseSlots(options.slots);
     days = options.days ? parseDays(options.days) : parseDays('weekdays');
   } catch (e) {
-    display.error(e instanceof Error ? e.message : String(e));
+    display.error(toErrorMessage(e));
     process.exitCode = 1;
     return;
   }
@@ -75,8 +66,7 @@ export async function smartCommand(options: { slots: string; days?: string; burn
     display.info(`Replaced ${removed} previous smart trigger(s).`);
   }
 
-  const existing = Array.isArray(config.smart) ? config.smart : [];
-  const smartConfigs = existing.filter(s => !s.days.some(d => days.includes(d)));
+  const smartConfigs = getSmartConfigs(config).filter(s => !s.days.some(d => days.includes(d)));
   smartConfigs.push({ windows, days, burnRate });
   config.smart = smartConfigs;
 

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { logPing } from '../logger/index.js';
 import { resolveExePath } from '../utils/claude-check.js';
+import { SHELL_META, ANSI_RE, stripAnsi, toErrorMessage } from '../utils/text.js';
 
 export interface PingResult {
   success: boolean;
@@ -9,14 +10,37 @@ export interface PingResult {
   response?: string;
 }
 
-const SHELL_META = /[;&|`${}[\]!#~<>*?\n\r]/;
-const ANSI_RE = /\x1B(?:\[[0-9;]*[a-zA-Z]|\][^\x07]*\x07|\(B)/g;
+const TRUST_RE = /trust\s*this\s*folder/i;
 
 function extractResponse(rawOutput: string, message: string): string {
   let cleaned = rawOutput.replace(ANSI_RE, '');
   const msgIdx = cleaned.indexOf(message);
   if (msgIdx !== -1) cleaned = cleaned.slice(msgIdx + message.length);
-  cleaned = cleaned.replace(/\/exit/g, '').replace(/[>❯]\s*/g, '').replace(/\s+/g, ' ').trim();
+  cleaned = cleaned
+    .replace(/─+/g, '')
+    .replace(/Resume this session with:.*$/gm, '')
+    .replace(/claude\s+--resume\s+[\w-]+/g, '')
+    .replace(/\d+\s*claude\.ai\s*connector.*?\/mcp/gi, '')
+    .replace(/ctx:\d+%[^·]*?·\/effort/g, '')
+    .replace(/\d+h:\d+%@[\w:.]+/g, '')
+    .replace(/\d+d:\d+%@[\w:.]+/g, '')
+    .replace(/[⠂⠐⠈⠑⠃]?\s*Claude Code\x07?/g, '')
+    .replace(/[✻✳;]?\s*\w+(?:ed|ing)\s+for\s+\d+s/g, '')
+    .replace(/\(\d+s\s*·\s*↓\s*\d+\s*tokens?\)/g, '')
+    .replace(/(?:bypass\s*permissions?\s*on|shift\+tab\s*to\s*cycle)/gi, '')
+    .replace(/[⏵●❯✻✳;]\s*/g, '')
+    .replace(/~[\\/][\w\\/.-]+/g, '')
+    .replace(/opus-\d+-\d+/g, '')
+    .replace(/·\/effort/g, '')
+    .replace(/\bhigh\b|\blow\b|\bmedium\b|\bmain\b/g, '')
+    .replace(/\bX{1,2}\b/g, '')
+    .replace(/\w+…/g, '')
+    .replace(/u\d[u;][\d;a-z]*/gi, '')
+    .replace(/\x07/g, '')
+    .replace(/\/exit/g, '')
+    .replace(/\(\s*\)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return cleaned.slice(0, 500);
 }
 
@@ -52,33 +76,50 @@ export async function executePing(claudePath: string, message: string, triggerId
       let output = '';
       let responseOutput = '';
       let sentMessage = false;
-      let sentExit = false;
+      let trustSeen = false;
+      let readyTimer: ReturnType<typeof setTimeout> | null = null;
+
       const timeout = setTimeout(() => {
         try { proc.kill(); } catch {}
         const duration = Date.now() - start;
         const resp = responseOutput ? extractResponse(responseOutput, message) : undefined;
         logPing(triggerId, 'success', `timeout after ${duration}ms — session was started`, resp);
         finish({ success: true, duration, response: resp });
-      }, 30000);
+      }, 60000);
+
+      function scheduleMessage(delayMs: number): void {
+        if (readyTimer || sentMessage || done) return;
+        readyTimer = setTimeout(() => {
+          if (done || sentMessage) return;
+          sentMessage = true;
+          responseOutput = '';
+          proc.write(message + '\r');
+          setTimeout(() => {
+            if (done) return;
+            proc.write('/exit\r');
+          }, 12000);
+        }, delayMs);
+      }
 
       proc.onData((data: string) => {
         if (output.length > 1_000_000) return;
         output += data;
         if (sentMessage) responseOutput += data;
-        const clean = output.replace(ANSI_RE, '');
-        if (!sentMessage && (clean.endsWith('> ') || clean.endsWith('>') || clean.endsWith('❯ ') || clean.includes('\n> '))) {
-          sentMessage = true;
+        const clean = stripAnsi(output);
+
+        if (!trustSeen && TRUST_RE.test(clean)) {
+          trustSeen = true;
+          if (readyTimer) { clearTimeout(readyTimer); readyTimer = null; }
           setTimeout(() => {
             if (done) return;
-            proc.write(message + '\r');
-          }, 1000);
+            proc.write('\r');
+            scheduleMessage(5000);
+          }, 500);
+          return;
         }
-        if (sentMessage && !sentExit && responseOutput.length > 50) {
-          sentExit = true;
-          setTimeout(() => {
-            if (done) return;
-            proc.write('/exit\r');
-          }, 2000);
+
+        if (!trustSeen && !sentMessage && clean.length > 200) {
+          scheduleMessage(5000);
         }
       });
 
@@ -92,7 +133,7 @@ export async function executePing(claudePath: string, message: string, triggerId
     });
   } catch (err) {
     const duration = Date.now() - start;
-    const errMsg = err instanceof Error ? err.message : String(err);
+    const errMsg = toErrorMessage(err);
     logPing(triggerId, 'error', errMsg);
     return { success: false, duration, error: errMsg };
   }

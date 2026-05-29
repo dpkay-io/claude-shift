@@ -1,6 +1,6 @@
-import type { DayOfWeek } from '../config/schema.js';
+import { ALL_DAYS, WEEKDAYS, WEEKENDS, type DayOfWeek, type WorkWindow } from '../config/schema.js';
 
-const DAY_ORDER: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const JS_DAY_ORDER: DayOfWeek[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
   mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday',
@@ -35,17 +35,17 @@ export function formatTime12h(minutes: number): string {
 }
 
 export function previousDay(day: DayOfWeek): DayOfWeek {
-  const idx = DAY_ORDER.indexOf(day);
-  return DAY_ORDER[(idx - 1 + 7) % 7]!;
+  const idx = ALL_DAYS.indexOf(day);
+  return ALL_DAYS[(idx - 1 + 7) % 7]!;
 }
 
 export function nextDay(day: DayOfWeek): DayOfWeek {
-  const idx = DAY_ORDER.indexOf(day);
-  return DAY_ORDER[(idx + 1) % 7]!;
+  const idx = ALL_DAYS.indexOf(day);
+  return ALL_DAYS[(idx + 1) % 7]!;
 }
 
 export function dayIndex(day: DayOfWeek): number {
-  return DAY_ORDER.indexOf(day);
+  return ALL_DAYS.indexOf(day);
 }
 
 export function dayLabel(day: DayOfWeek): string {
@@ -61,48 +61,48 @@ export function parseDays(input: string): DayOfWeek[] {
   const parts = input.toLowerCase().split(',').map(s => s.trim());
   for (const part of parts) {
     if (part === 'weekdays') {
-      ['mon', 'tue', 'wed', 'thu', 'fri'].forEach(d => result.add(d as DayOfWeek));
+      WEEKDAYS.forEach(d => result.add(d));
       continue;
     }
     if (part === 'weekends') {
-      ['sat', 'sun'].forEach(d => result.add(d as DayOfWeek));
+      WEEKENDS.forEach(d => result.add(d));
       continue;
     }
     if (part === 'daily' || part === 'all') {
-      DAY_ORDER.forEach(d => result.add(d));
+      ALL_DAYS.forEach(d => result.add(d));
       continue;
     }
     const range = part.match(/^(\w{3})-(\w{3})$/);
     if (range) {
-      const start = DAY_ORDER.indexOf(range[1] as DayOfWeek);
-      const end = DAY_ORDER.indexOf(range[2] as DayOfWeek);
+      const start = ALL_DAYS.indexOf(range[1] as DayOfWeek);
+      const end = ALL_DAYS.indexOf(range[2] as DayOfWeek);
       if (start === -1 || end === -1) throw new Error(`Invalid day range: "${part}"`);
       let i = start;
       while (true) {
-        result.add(DAY_ORDER[i]!);
+        result.add(ALL_DAYS[i]!);
         if (i === end) break;
         i = (i + 1) % 7;
       }
       continue;
     }
-    if (DAY_ORDER.includes(part as DayOfWeek)) {
+    if (ALL_DAYS.includes(part as DayOfWeek)) {
       result.add(part as DayOfWeek);
       continue;
     }
     throw new Error(`Unknown day: "${part}". Use mon,tue,wed,thu,fri,sat,sun or weekdays,weekends,daily`);
   }
-  return DAY_ORDER.filter(d => result.has(d));
+  return ALL_DAYS.filter(d => result.has(d));
 }
 
 export function sortDays(days: DayOfWeek[]): DayOfWeek[] {
-  return DAY_ORDER.filter(d => days.includes(d));
+  return ALL_DAYS.filter(d => days.includes(d));
 }
 
 export function formatDays(days: DayOfWeek[]): string {
   const sorted = sortDays(days);
   if (sorted.length === 7) return 'daily';
-  if (sorted.length === 5 && sorted.every(d => ['mon', 'tue', 'wed', 'thu', 'fri'].includes(d))) return 'weekdays';
-  if (sorted.length === 2 && sorted.every(d => ['sat', 'sun'].includes(d))) return 'weekends';
+  if (sorted.length === 5 && sorted.every(d => WEEKDAYS.includes(d))) return 'weekdays';
+  if (sorted.length === 2 && sorted.every(d => WEEKENDS.includes(d))) return 'weekends';
   return sorted.map(dayShort).join(', ');
 }
 
@@ -131,10 +131,19 @@ export function todayDateString(): string {
 }
 
 export function dateToDayOfWeek(date: string): DayOfWeek {
-  const dayNames: DayOfWeek[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   const [y, m, d] = date.split('-').map(Number);
   const dt = new Date(y!, m! - 1, d!);
-  return dayNames[dt.getDay()]!;
+  return JS_DAY_ORDER[dt.getDay()]!;
+}
+
+export function parseSlots(input: string): WorkWindow[] {
+  return input.split(',').map(s => s.trim()).map(slot => {
+    const match = slot.match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
+    if (!match) throw new Error(`Invalid slot format: "${slot}" (expected HH:mm-HH:mm)`);
+    parseTime(match[1]!);
+    parseTime(match[2]!);
+    return { start: match[1]!, end: match[2]! };
+  });
 }
 
 export function getWeekDates(): string[] {

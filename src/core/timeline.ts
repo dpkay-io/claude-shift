@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import type { Trigger, WorkWindow, SmartConfig, DayOfWeek } from '../config/schema.js';
-import { parseTime, dayShort, todayDateString, getWeekDates } from './time-utils.js';
+import { parseTime, dayShort, todayDateString, dateToDayOfWeek } from './time-utils.js';
 
 const COLS = 72;
 const CHARS_PER_HOUR = COLS / 24;
@@ -187,7 +187,6 @@ export function renderToday(
   smartConfigs: SmartConfig[],
   slotDuration: number,
 ): string {
-  const dayNames: DayOfWeek[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-  const today = dayNames[new Date().getDay()]!;
-  return renderTimeline(triggers, smartConfigs, slotDuration, [today], [todayDateString()]);
+  const dateStr = todayDateString();
+  return renderTimeline(triggers, smartConfigs, slotDuration, [dateToDayOfWeek(dateStr)], [dateStr]);
 }
