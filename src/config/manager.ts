@@ -28,6 +28,10 @@ function validateConfig(raw: unknown): Config {
     claudePath: typeof rawSettings.claudePath === 'string' && rawSettings.claudePath ? rawSettings.claudePath : defSettings.claudePath,
     nodePath: typeof rawSettings.nodePath === 'string' && rawSettings.nodePath ? rawSettings.nodePath : defSettings.nodePath,
     pingMessage: typeof rawSettings.pingMessage === 'string' && rawSettings.pingMessage ? rawSettings.pingMessage : defSettings.pingMessage,
+    retryEnabled: typeof rawSettings.retryEnabled === 'boolean' ? rawSettings.retryEnabled : defSettings.retryEnabled,
+    retryIntervals: Array.isArray(rawSettings.retryIntervals) && rawSettings.retryIntervals.length > 0 && rawSettings.retryIntervals.every((n: unknown) => typeof n === 'number' && n > 0)
+      ? (rawSettings.retryIntervals as number[]).slice().sort((a: number, b: number) => a - b)
+      : defSettings.retryIntervals,
   };
 
   return { version, triggers, smart, nextId, settings } as Config;

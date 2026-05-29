@@ -13,3 +13,4 @@ sh.exe.stackdump
 .idea/
 *.swp
 *.swo
+*.code-workspace

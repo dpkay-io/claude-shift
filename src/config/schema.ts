@@ -34,6 +34,8 @@ export interface Settings {
   claudePath: string; // auto-detected or manual
   nodePath: string; // auto-detected
   pingMessage: string;
+  retryEnabled: boolean;
+  retryIntervals: number[]; // minutes from original trigger time
 }
 
 export interface Config {

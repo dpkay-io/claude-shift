@@ -13,6 +13,8 @@ export function defaultSettings(): Settings {
     claudePath: 'claude',
     nodePath: process.execPath,
     pingMessage: 'ping',
+    retryEnabled: true,
+    retryIntervals: [5, 15, 30, 45, 60],
   };
 }
 
