@@ -12,10 +12,19 @@ describe('parseTime', () => {
     expect(parseTime('12:30')).toBe(750);
   });
 
+  it('parses single-digit hours consistently', () => {
+    expect(parseTime('9:59')).toBe(599);
+    expect(parseTime('00:00')).toBe(0);
+    expect(parseTime('0:00')).toBe(0);
+  });
+
   it('rejects invalid formats', () => {
     expect(() => parseTime('25:00')).toThrow();
     expect(() => parseTime('abc')).toThrow();
     expect(() => parseTime('12:60')).toThrow();
+    expect(() => parseTime('12:30:00')).toThrow();
+    expect(() => parseTime('-1:00')).toThrow();
+    expect(() => parseTime('12 :30')).toThrow();
   });
 });
 
@@ -29,6 +38,10 @@ describe('formatTime', () => {
   it('handles negative/overflow via wrapping', () => {
     expect(formatTime(-60)).toBe('23:00');
     expect(formatTime(1500)).toBe('01:00');
+  });
+
+  it('handles exact midnight boundary (1440)', () => {
+    expect(formatTime(1440)).toBe('00:00');
   });
 });
 
@@ -75,6 +88,15 @@ describe('parseDays', () => {
   it('rejects invalid days', () => {
     expect(() => parseDays('foo')).toThrow();
   });
+
+  it('handles wrap-around ranges', () => {
+    const result = parseDays('fri-mon');
+    expect(result).toEqual(['mon', 'fri', 'sat', 'sun']);
+  });
+
+  it('deduplicates entries', () => {
+    expect(parseDays('mon,mon,mon')).toEqual(['mon']);
+  });
 });
 
 describe('formatDays', () => {
@@ -92,6 +114,10 @@ describe('formatDays', () => {
 
   it('lists individual days otherwise', () => {
     expect(formatDays(['mon', 'fri'])).toBe('Mon, Fri');
+  });
+
+  it('formats a single day', () => {
+    expect(formatDays(['wed'])).toBe('Wed');
   });
 });
 

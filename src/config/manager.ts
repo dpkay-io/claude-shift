@@ -17,7 +17,7 @@ function validateConfig(raw: unknown): Config {
   const version = obj.version === 1 ? 1 : defaults.version;
   const nextId = typeof obj.nextId === 'number' && obj.nextId >= 1 ? obj.nextId : defaults.nextId;
   const triggers = Array.isArray(obj.triggers) ? obj.triggers.filter(isValidTrigger) : [];
-  const smart = Array.isArray(obj.smart) ? obj.smart : undefined;
+  const smart = Array.isArray(obj.smart) ? obj.smart.filter(isValidSmartConfig) : undefined;
 
   const rawSettings = typeof obj.settings === 'object' && obj.settings !== null
     ? obj.settings as Record<string, unknown>
@@ -27,8 +27,7 @@ function validateConfig(raw: unknown): Config {
     burnRate: typeof rawSettings.burnRate === 'number' && rawSettings.burnRate > 0 ? rawSettings.burnRate : defSettings.burnRate,
     claudePath: typeof rawSettings.claudePath === 'string' && rawSettings.claudePath ? rawSettings.claudePath : defSettings.claudePath,
     nodePath: typeof rawSettings.nodePath === 'string' && rawSettings.nodePath ? rawSettings.nodePath : defSettings.nodePath,
-    logFile: typeof rawSettings.logFile === 'string' && rawSettings.logFile ? rawSettings.logFile : defSettings.logFile,
-    pingMessage: typeof rawSettings.pingMessage === 'string' ? rawSettings.pingMessage : defSettings.pingMessage,
+    pingMessage: typeof rawSettings.pingMessage === 'string' && rawSettings.pingMessage ? rawSettings.pingMessage : defSettings.pingMessage,
   };
 
   return { version, triggers, smart, nextId, settings } as Config;
@@ -44,6 +43,12 @@ function isValidTrigger(t: unknown): t is Trigger {
     && (obj.source === 'manual' || obj.source === 'smart');
 }
 
+function isValidSmartConfig(s: unknown): boolean {
+  if (s === null || typeof s !== 'object') return false;
+  const obj = s as Record<string, unknown>;
+  return Array.isArray(obj.windows) && Array.isArray(obj.days) && typeof obj.burnRate === 'number' && obj.burnRate > 0;
+}
+
 export function loadConfig(): Config {
   ensureDir();
   try {
@@ -56,6 +61,7 @@ export function loadConfig(): Config {
       return config;
     }
     try { fs.copyFileSync(CONFIG_FILE, CONFIG_FILE + '.bak'); } catch {}
+    console.warn(`Warning: config file was corrupt or unreadable — reset to defaults. Backup saved to ${CONFIG_FILE}.bak`);
     const config = defaultConfig();
     saveConfig(config);
     return config;
@@ -64,7 +70,9 @@ export function loadConfig(): Config {
 
 export function saveConfig(config: Config): void {
   ensureDir();
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  const tmpFile = CONFIG_FILE + '.tmp';
+  fs.writeFileSync(tmpFile, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  fs.renameSync(tmpFile, CONFIG_FILE);
 }
 
 export function addTrigger(config: Config, trigger: Omit<Trigger, 'id'>): Trigger {

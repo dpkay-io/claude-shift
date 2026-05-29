@@ -1,3 +1,4 @@
+import readline from 'node:readline/promises';
 import { loadConfig, saveConfig, addTrigger, clearSmartTriggers } from '../config/manager.js';
 import { parseDays, parseTime, formatTime12h, formatDays } from '../core/time-utils.js';
 import { calculatePings, explainPing } from '../core/smart-calculator.js';
@@ -15,9 +16,17 @@ function parseSlots(input: string): WorkWindow[] {
   });
 }
 
-export function smartCommand(options: { slots: string; days?: string; burnRate?: string; yes?: boolean }): void {
-  const windows = parseSlots(options.slots);
-  const days: DayOfWeek[] = options.days ? parseDays(options.days) : parseDays('weekdays');
+export async function smartCommand(options: { slots: string; days?: string; burnRate?: string; yes?: boolean }): Promise<void> {
+  let windows: WorkWindow[];
+  let days: DayOfWeek[];
+  try {
+    windows = parseSlots(options.slots);
+    days = options.days ? parseDays(options.days) : parseDays('weekdays');
+  } catch (e) {
+    display.error(e instanceof Error ? e.message : String(e));
+    process.exitCode = 1;
+    return;
+  }
   const config = loadConfig();
   const parsed = options.burnRate ? parseFloat(options.burnRate) : NaN;
   if (options.burnRate && (isNaN(parsed) || parsed <= 0 || !isFinite(parsed))) {
@@ -46,7 +55,21 @@ export function smartCommand(options: { slots: string; days?: string; burnRate?:
   }
   console.log();
 
-  // Apply
+  if (!options.yes) {
+    if (!process.stdin.isTTY) {
+      display.error('Non-interactive mode requires --yes to apply triggers.');
+      process.exitCode = 1;
+      return;
+    }
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const answer = await rl.question('  Apply these triggers? (y/n) ');
+    rl.close();
+    if (answer.trim().toLowerCase() !== 'y') {
+      console.log(chalk.dim('  Cancelled.'));
+      return;
+    }
+  }
+
   const removed = clearSmartTriggers(config, days);
   if (removed > 0) {
     display.info(`Replaced ${removed} previous smart trigger(s).`);

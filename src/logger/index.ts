@@ -24,16 +24,22 @@ function rotateIfNeeded(filePath: string): void {
 }
 
 function sanitize(s: string): string {
-  return s.replace(/[\n\r]/g, ' ');
+  return s.replace(/[\n\r]/g, ' ').replace(/"/g, "'");
 }
 
-export function logPing(triggerId: string, status: 'success' | 'error', detail?: string): void {
+function formatLocalTime(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+export function logPing(triggerId: string, status: 'success' | 'error', detail?: string, response?: string): void {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   const filePath = logPath();
   rotateIfNeeded(filePath);
-  const ts = new Date().toISOString();
-  const extra = detail ? ` detail="${sanitize(detail)}"` : '';
-  const line = `[${ts}] PING trigger=${sanitize(triggerId)} status=${status}${extra}\n`;
+  const localTime = formatLocalTime(new Date());
+  const extra = detail ? ` detail="${sanitize(detail).slice(0, 500)}"` : '';
+  const resp = response ? ` response="${sanitize(response).slice(0, 500)}"` : '';
+  const line = `[${localTime}] PING trigger=${sanitize(triggerId)} status=${status}${extra}${resp}\n`;
   fs.appendFileSync(filePath, line, 'utf-8');
 }
 

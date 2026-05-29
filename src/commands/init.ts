@@ -1,8 +1,8 @@
 import readline from 'node:readline/promises';
-import { loadConfig, saveConfig } from '../config/manager.js';
+import { loadConfig, saveConfig, addTrigger } from '../config/manager.js';
 import { findClaude } from '../utils/claude-check.js';
+import { parseDays, parseTime } from '../core/time-utils.js';
 import { smartCommand } from './smart.js';
-import { addCommand } from './add.js';
 import { installCommand } from './install.js';
 import * as display from '../utils/display.js';
 import { printTriggerTable } from '../utils/display.js';
@@ -45,12 +45,12 @@ export async function initCommand(): Promise<void> {
     // Slot duration
     const slotStr = await ask(rl, 'Slot duration in hours', String(config.settings.slotDuration));
     const slotVal = parseFloat(slotStr);
-    config.settings.slotDuration = isNaN(slotVal) ? 5 : slotVal;
+    config.settings.slotDuration = isNaN(slotVal) || slotVal <= 0 || !isFinite(slotVal) ? 5 : slotVal;
 
     // Burn rate
     const burnStr = await ask(rl, 'Your typical slot burn rate in hours', String(config.settings.burnRate));
     const burnVal = parseFloat(burnStr);
-    config.settings.burnRate = isNaN(burnVal) ? 2 : burnVal;
+    config.settings.burnRate = isNaN(burnVal) || burnVal <= 0 || !isFinite(burnVal) ? 2 : burnVal;
 
     saveConfig(config);
 
@@ -69,10 +69,10 @@ export async function initCommand(): Promise<void> {
       console.log();
       const slots = await ask(rl, 'Work windows');
       const days = await ask(rl, 'Days', 'weekdays');
+      rl.close();
 
       if (slots) {
-        rl.close();
-        smartCommand({ slots, days, yes: true });
+        await smartCommand({ slots, days, yes: true });
       }
     } else {
       console.log();
@@ -82,14 +82,20 @@ export async function initCommand(): Promise<void> {
       while (true) {
         const time = await ask(rl, 'Ping time (HH:mm, or empty to finish)');
         if (!time) break;
-        const days = await ask(rl, 'Days', 'weekdays');
-        rl.close();
-        addCommand(time, { days });
-        count++;
-        break; // close rl after first — subsequent adds can use the CLI directly
+        const daysInput = await ask(rl, 'Days', 'weekdays');
+        try {
+          const days = parseDays(daysInput);
+          parseTime(time);
+          addTrigger(config, { time, days, source: 'manual', enabled: true });
+          count++;
+          display.success(`Added trigger at ${time}`);
+        } catch (e) {
+          display.error(e instanceof Error ? e.message : String(e));
+        }
       }
-      if (count === 0) {
-        rl.close();
+      rl.close();
+      if (count > 0) {
+        saveConfig(config);
       }
     }
 

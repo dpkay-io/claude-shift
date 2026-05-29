@@ -159,6 +159,31 @@ describe('calculatePings', () => {
       2,
     )).toThrow(/start must be before end/);
   });
+
+  it('returns empty for empty windows array', () => {
+    expect(calculatePings([], weekdays, 5, 2)).toEqual([]);
+  });
+
+  it('skips pre-burn when burn rate exceeds slot duration', () => {
+    const pings = calculatePings(
+      [{ start: '10:00', end: '12:00' }],
+      weekdays,
+      5,
+      6,
+    );
+    expect(pings).toHaveLength(1);
+    expect(pings[0]!.time).toBe('10:00');
+  });
+
+  it('handles a single-minute window', () => {
+    const pings = calculatePings(
+      [{ start: '08:00', end: '08:01' }],
+      weekdays,
+      5,
+      2,
+    );
+    expect(pings).toHaveLength(1);
+  });
 });
 
 describe('explainPing', () => {

@@ -4,9 +4,15 @@ import type { DayOfWeek } from '../config/schema.js';
 import * as display from '../utils/display.js';
 
 export function addCommand(time: string, options: { days?: string }): void {
-  parseTime(time); // validate
-
-  const days: DayOfWeek[] = options.days ? parseDays(options.days) : parseDays('weekdays');
+  let days: DayOfWeek[];
+  try {
+    parseTime(time); // validate
+    days = options.days ? parseDays(options.days) : parseDays('weekdays');
+  } catch (e) {
+    display.error(e instanceof Error ? e.message : String(e));
+    process.exitCode = 1;
+    return;
+  }
   const config = loadConfig();
 
   const trigger = addTrigger(config, {

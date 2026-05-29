@@ -12,12 +12,27 @@ const CONFIG_DIR = path.join(os.homedir(), '.claude-shift');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const LOG_FILE = path.join(CONFIG_DIR, 'ping.log');
 const LOCK_FILE = path.join(CONFIG_DIR, 'ping.lock');
-const SHELL_META = /[;&|`$(){}[\]!#~<>*?\n\r]/;
+const SHELL_META = /[;&|`${}[\]!#~<>*?\n\r]/;
+
+function formatLocalTime(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
 
 function log(msg) {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   const safe = String(msg).replace(/[\n\r]/g, ' ');
-  fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${safe}\n`, 'utf-8');
+  fs.appendFileSync(LOG_FILE, `[${formatLocalTime(new Date())}] ${safe}\n`, 'utf-8');
+}
+
+const ANSI_RE = /\x1B(?:\[[0-9;]*[a-zA-Z]|\][^\x07]*\x07|\(B)/g;
+
+function extractResponse(rawOutput, message) {
+  let cleaned = rawOutput.replace(ANSI_RE, '');
+  const msgIdx = cleaned.indexOf(message);
+  if (msgIdx !== -1) cleaned = cleaned.slice(msgIdx + message.length);
+  cleaned = cleaned.replace(/\/exit/g, '').replace(/[>❯]\s*/g, '').replace(/\s+/g, ' ').trim();
+  return cleaned.slice(0, 500);
 }
 
 function acquireLock() {
@@ -57,21 +72,42 @@ function resolveExePath(name) {
   return name;
 }
 
-function loadClaudePath() {
+function loadConfig() {
   try {
     const raw = fs.readFileSync(CONFIG_FILE, 'utf-8');
-    const config = JSON.parse(raw);
-    if (typeof config?.settings?.claudePath === 'string' && config.settings.claudePath) {
-      const p = config.settings.claudePath;
-      if (path.isAbsolute(p)) return p;
-      return resolveExePath(path.basename(p));
-    }
+    return JSON.parse(raw);
   } catch {}
+  return null;
+}
+
+function loadClaudePath(config) {
+  if (typeof config?.settings?.claudePath === 'string' && config.settings.claudePath) {
+    const p = config.settings.claudePath;
+    if (path.isAbsolute(p)) return p;
+    if (p.includes(path.sep) || p.includes('/')) {
+      return path.resolve(os.homedir(), p);
+    }
+    return resolveExePath(p);
+  }
   return resolveExePath('claude');
+}
+
+function loadPingMessage(config) {
+  if (typeof config?.settings?.pingMessage === 'string') {
+    return config.settings.pingMessage;
+  }
+  return 'ping';
+}
+
+function sanitizeLog(s) {
+  return String(s).replace(/[\n\r]/g, ' ').replace(/"/g, "'");
 }
 
 async function main() {
   const triggerId = process.argv[2] || 'scheduled';
+
+  process.on('SIGTERM', () => { releaseLock(); process.exit(0); });
+  process.on('SIGINT', () => { releaseLock(); process.exit(0); });
 
   if (!acquireLock()) {
     log(`ERROR trigger=${triggerId} could not acquire lock`);
@@ -83,12 +119,15 @@ async function main() {
 
   try {
     const pty = await import('@lydell/node-pty');
-    const claudePath = loadClaudePath();
+    const config = loadConfig();
+    const claudePath = loadClaudePath(config);
+    const message = loadPingMessage(config);
 
     if (!claudePath || SHELL_META.test(claudePath)) {
       throw new Error(`Invalid claudePath: "${claudePath}"`);
     }
 
+    let done = false;
     const proc = pty.spawn(claudePath, [], {
       name: 'xterm-256color',
       cols: 80,
@@ -97,45 +136,59 @@ async function main() {
     });
 
     let output = '';
+    let responseOutput = '';
     let sentMessage = false;
     let sentExit = false;
 
     const timeout = setTimeout(() => {
+      if (done) return;
+      done = true;
       try { proc.kill(); } catch {}
       const duration = Date.now() - start;
-      log(`PING trigger=${triggerId} status=success detail="timeout after ${duration}ms — session was started"`);
+      const resp = responseOutput ? extractResponse(responseOutput, message) : '';
+      const respPart = resp ? ` response="${sanitizeLog(resp)}"` : '';
+      log(`PING trigger=${triggerId} status=success detail="timeout after ${duration}ms — session was started"${respPart}`);
       releaseLock();
       process.exit(0);
     }, 30000);
 
     proc.onData((data) => {
-      output += data;
       if (output.length > 1_000_000) return;
-      if (!sentMessage && (output.includes('>') || output.includes('Claude'))) {
+      output += data;
+      if (sentMessage) responseOutput += data;
+      const clean = output.replace(ANSI_RE, '');
+      if (!sentMessage && (clean.endsWith('> ') || clean.endsWith('>') || clean.endsWith('❯ ') || clean.includes('\n> '))) {
         sentMessage = true;
         setTimeout(() => {
-          proc.write('ping\r');
+          if (done) return;
+          proc.write(message + '\r');
         }, 1000);
       }
-      if (sentMessage && !sentExit && output.length > 300) {
+      if (sentMessage && !sentExit && responseOutput.length > 50) {
         sentExit = true;
         setTimeout(() => {
+          if (done) return;
           proc.write('/exit\r');
         }, 2000);
       }
     });
 
     proc.onExit(({ exitCode }) => {
+      if (done) return;
+      done = true;
       clearTimeout(timeout);
       const duration = Date.now() - start;
       const ok = exitCode === 0 || exitCode === null;
-      log(`PING trigger=${triggerId} status=${ok ? 'success' : 'error'} detail="exit=${exitCode} duration=${duration}ms"`);
+      const resp = responseOutput ? extractResponse(responseOutput, message) : '';
+      const respPart = resp ? ` response="${sanitizeLog(resp)}"` : '';
+      log(`PING trigger=${triggerId} status=${ok ? 'success' : 'error'} detail="exit=${exitCode} duration=${duration}ms"${respPart}`);
       releaseLock();
       process.exit(ok ? 0 : 1);
     });
   } catch (err) {
     const duration = Date.now() - start;
-    log(`PING trigger=${triggerId} status=error detail="${err.message}" duration=${duration}ms`);
+    const errMsg = err instanceof Error ? err.message : String(err);
+    log(`PING trigger=${triggerId} status=error detail="${sanitizeLog(errMsg)}" duration=${duration}ms`);
     releaseLock();
     process.exit(1);
   }

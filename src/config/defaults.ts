@@ -12,7 +12,6 @@ export function defaultSettings(): Settings {
     burnRate: 2,
     claudePath: 'claude',
     nodePath: process.execPath,
-    logFile: LOG_FILE,
     pingMessage: 'ping',
   };
 }

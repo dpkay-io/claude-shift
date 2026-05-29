@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import { initCommand } from './commands/init.js';
 import { addCommand } from './commands/add.js';
@@ -14,12 +15,13 @@ import { todayCommand } from './commands/today.js';
 import { weekCommand } from './commands/week.js';
 import { configGetCommand, configSetCommand } from './commands/config.js';
 
+const pkg = createRequire(import.meta.url)('../package.json') as { version: string };
 const program = new Command();
 
 program
   .name('claude-shift')
   .description('Optimize your Claude Max 5-hour slots by scheduling strategic session pings')
-  .version('0.1.0');
+  .version(pkg.version);
 
 program
   .command('init')

@@ -24,7 +24,7 @@ export function calculatePings(
   windows: WorkWindow[],
   days: DayOfWeek[],
   slotDuration: number, // hours
-  burnRate: number, // hours — kept for API compatibility
+  burnRate: number, // hours — used for pre-burn calculation
 ): CalculatedPing[] {
   const slotMinutes = slotDuration * 60;
 

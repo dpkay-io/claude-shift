@@ -1,0 +1,20 @@
+{
+  "folders": [
+    {
+      "name": "claude-shift [main]",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "window.title": "claude-shift ${separator} ${activeRepositoryBranchName} ${separator} ${activeEditorShort}",
+    "workbench.colorCustomizations": {
+      "titleBar.activeBackground": "#16a34a",
+      "titleBar.inactiveBackground": "#16a34a",
+      "titleBar.activeForeground": "#ffffff",
+      "titleBar.inactiveForeground": "#ffffff",
+      "statusBar.background": "#16a34a",
+      "statusBar.foreground": "#ffffff"
+    },
+    "wsIdentity.appendBranchToFolderName": true
+  }
+}

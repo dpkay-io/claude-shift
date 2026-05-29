@@ -38,7 +38,15 @@ export async function installCommand(): Promise<void> {
     process.exitCode = 1;
     return;
   }
+  const SHELL_META = /[;&|`${}[\]!#~<>*?\n\r]/;
   const nodePath = config.settings.nodePath;
+
+  if (SHELL_META.test(nodePath)) {
+    display.error(`Node path contains unsafe characters: "${nodePath}"`);
+    display.info('Fix with: claude-shift config set nodePath /path/to/node');
+    process.exitCode = 1;
+    return;
+  }
 
   if (!fs.existsSync(nodePath)) {
     display.error(`Node.js not found at: ${nodePath}`);

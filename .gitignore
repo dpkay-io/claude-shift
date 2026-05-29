@@ -4,3 +4,12 @@ dist/
 .DS_Store
 Thumbs.db
 *.tsbuildinfo
+sh.exe.stackdump
+.env
+.env.*
+*.pem
+*.key
+.vscode/
+.idea/
+*.swp
+*.swo

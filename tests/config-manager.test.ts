@@ -1,8 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import fs from 'node:fs';
-import path from 'node:path';
-import os from 'node:os';
-import { addTrigger, removeTrigger, clearSmartTriggers } from '../src/config/manager.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { addTrigger, removeTrigger, clearSmartTriggers, findTrigger } from '../src/config/manager.js';
 import { defaultConfig } from '../src/config/defaults.js';
 import type { Config } from '../src/config/schema.js';
 
@@ -59,6 +56,33 @@ describe('config manager', () => {
       expect(removed).toBe(1);
       expect(config.triggers).toHaveLength(1);
       expect(config.triggers[0]!.days).toEqual(['mon', 'tue', 'wed', 'thu', 'fri']);
+    });
+  });
+
+  describe('findTrigger', () => {
+    it('finds an existing trigger by ID', () => {
+      addTrigger(config, { time: '03:00', days: ['mon'], source: 'manual', enabled: true });
+      const found = findTrigger(config, '001');
+      expect(found).toBeDefined();
+      expect(found!.time).toBe('03:00');
+    });
+
+    it('returns undefined for non-existent ID', () => {
+      expect(findTrigger(config, '999')).toBeUndefined();
+    });
+  });
+
+  describe('addTrigger ID format', () => {
+    it('pads IDs to 3 digits', () => {
+      const t = addTrigger(config, { time: '03:00', days: ['mon'], source: 'manual', enabled: true });
+      expect(t.id).toBe('001');
+    });
+
+    it('handles IDs beyond 999', () => {
+      config.nextId = 1000;
+      const t = addTrigger(config, { time: '03:00', days: ['mon'], source: 'manual', enabled: true });
+      expect(t.id).toBe('1000');
+      expect(config.nextId).toBe(1001);
     });
   });
 });

@@ -4,7 +4,7 @@ import type { InstalledTask } from '../scheduler/types.js';
 import { formatTime12h, formatDays, parseTime } from '../core/time-utils.js';
 
 // eslint-disable-next-line no-control-regex
-const ANSI_RE = /\x1B\[[0-9;]*m/g;
+const ANSI_RE = /\x1B(?:\[[0-9;]*[a-zA-Z]|\][^\x07]*\x07|\(B)/g;
 
 function visibleLength(s: string): number {
   return s.replace(ANSI_RE, '').length;

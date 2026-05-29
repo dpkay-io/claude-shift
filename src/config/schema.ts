@@ -32,7 +32,6 @@ export interface Settings {
   burnRate: number; // hours, default 2
   claudePath: string; // auto-detected or manual
   nodePath: string; // auto-detected
-  logFile: string;
   pingMessage: string;
 }
 

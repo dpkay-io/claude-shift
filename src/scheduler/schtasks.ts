@@ -34,9 +34,20 @@ export class SchtasksScheduler implements SchedulerBackend {
   }
 
   async removeAll(): Promise<void> {
-    const tasks = await this.list();
-    for (const task of tasks) {
-      await this.remove(task.id);
+    try {
+      const output = schtasks('/query', '/fo', 'CSV', '/nh');
+      for (const line of output.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const cols = trimmed.split('","').map(s => s.replace(/"/g, ''));
+        if (cols.length < 1 || !cols[0]) continue;
+        const name = cols[0].replace(/^\\+/, '');
+        if (!name.startsWith(TASK_PREFIX)) continue;
+        const id = name.slice(TASK_PREFIX.length);
+        await this.remove(id);
+      }
+    } catch {
+      // No tasks found or query failed — nothing to remove
     }
   }
 
@@ -54,7 +65,9 @@ export class SchtasksScheduler implements SchedulerBackend {
         if (!name.startsWith(TASK_PREFIX)) continue;
 
         const id = name.slice(TASK_PREFIX.length);
-        const status = cols[2]?.toLowerCase().includes('ready') ? 'active' as const : 'inactive' as const;
+        const statusText = (cols[2] ?? '').toLowerCase();
+        const isDisabled = statusText.includes('disabled') || statusText.includes('disable');
+        const status = isDisabled ? 'inactive' as const : 'active' as const;
         results.push({ id, time: cols[1] ?? '', days: '', status });
       }
 
@@ -73,7 +86,7 @@ export class SchtasksScheduler implements SchedulerBackend {
       if (msg.includes('Access is denied')) {
         return { available: false, reason: 'Access denied. Try running as administrator.' };
       }
-      return { available: true };
+      return { available: false, reason: msg || 'schtasks command failed' };
     }
   }
 }

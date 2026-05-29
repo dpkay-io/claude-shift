@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import type { DayOfWeek } from '../config/schema.js';
 import type { SchedulerBackend, ScheduledTask, InstalledTask, SchedulerCheckResult } from './types.js';
 
@@ -73,7 +73,7 @@ ${calendarEntries}
 }
 
 function escapeXml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
 export class LaunchdScheduler implements SchedulerBackend {
@@ -83,16 +83,15 @@ export class LaunchdScheduler implements SchedulerBackend {
     fs.mkdirSync(PLIST_DIR, { recursive: true });
     const plist = plistPath(task.id);
 
-    // Unload existing if present
-    try { execSync(`launchctl unload "${plist}" 2>/dev/null`); } catch {}
+    try { execFileSync('launchctl', ['unload', plist], { stdio: 'pipe' }); } catch {}
 
     fs.writeFileSync(plist, buildPlist(task), 'utf-8');
-    execSync(`launchctl load "${plist}"`);
+    execFileSync('launchctl', ['load', plist], { stdio: 'pipe' });
   }
 
   async remove(id: string): Promise<void> {
     const plist = plistPath(id);
-    try { execSync(`launchctl unload "${plist}" 2>/dev/null`); } catch {}
+    try { execFileSync('launchctl', ['unload', plist], { stdio: 'pipe' }); } catch {}
     try { fs.unlinkSync(plist); } catch {}
   }
 
@@ -101,7 +100,7 @@ export class LaunchdScheduler implements SchedulerBackend {
     const files = fs.readdirSync(PLIST_DIR).filter(f => f.startsWith(LABEL_PREFIX));
     for (const file of files) {
       const full = path.join(PLIST_DIR, file);
-      try { execSync(`launchctl unload "${full}" 2>/dev/null`); } catch {}
+      try { execFileSync('launchctl', ['unload', full], { stdio: 'pipe' }); } catch {}
       try { fs.unlinkSync(full); } catch {}
     }
   }
@@ -117,7 +116,7 @@ export class LaunchdScheduler implements SchedulerBackend {
 
   async check(): Promise<SchedulerCheckResult> {
     try {
-      execSync('which launchctl', { encoding: 'utf-8', timeout: 5000 });
+      execFileSync('which', ['launchctl'], { encoding: 'utf-8', timeout: 5000 });
       return { available: true };
     } catch {
       return { available: false, reason: 'launchctl not found (not macOS?)' };

@@ -4,36 +4,35 @@ import { parseTime, dayShort } from './time-utils.js';
 
 const COLS = 72;
 const CHARS_PER_HOUR = COLS / 24;
+const LABEL_WIDTH = 6;
 
-interface SlotSpan {
-  start: number;
-  end: number;
-  type: 'ping' | 'slot' | 'work';
-}
+type CellType = 'empty' | 'slot' | 'work' | 'ping' | 'renewal';
 
 function minuteToCol(minutes: number): number {
   return Math.round((minutes / 1440) * COLS);
 }
 
-function fillRange(row: string[], start: number, end: number, char: string): void {
-  for (let i = start; i < Math.min(end, COLS); i++) {
-    row[i] = char;
+function fillGrid(grid: CellType[], startMin: number, endMin: number, value: CellType): void {
+  const start = minuteToCol(startMin);
+  const end = minuteToCol(endMin);
+  if (end === start) return;
+  if (end < start) {
+    for (let i = start; i < COLS; i++) grid[i] = value;
+    for (let i = 0; i < end; i++) grid[i] = value;
+  } else {
+    for (let i = start; i < Math.min(end, COLS); i++) grid[i] = value;
   }
 }
 
-function renderRow(spans: SlotSpan[], char: string, colorFn: (s: string) => string): string {
-  const row = new Array(COLS).fill(' ');
+function isTimeInSpans(minute: number, spans: { start: number; end: number }[]): boolean {
   for (const span of spans) {
-    const start = minuteToCol(span.start);
-    const end = minuteToCol(span.end);
-    if (end <= start) {
-      fillRange(row, start, COLS, char);
-      fillRange(row, 0, end, char);
+    if (span.end > span.start) {
+      if (minute >= span.start && minute < span.end) return true;
     } else {
-      fillRange(row, start, end, char);
+      if (minute >= span.start || minute < span.end) return true;
     }
   }
-  return row.map(c => c === char ? colorFn(c) : c).join('');
+  return false;
 }
 
 function renderHourHeader(): string {
@@ -49,7 +48,7 @@ function renderHourHeader(): string {
 function renderHourTicks(): string {
   let ticks = '';
   for (let h = 0; h < 24; h++) {
-    ticks += '|';
+    ticks += '╵';
     ticks += ' '.repeat(Math.max(0, CHARS_PER_HOUR - 1));
   }
   return chalk.dim(ticks.slice(0, COLS));
@@ -74,46 +73,64 @@ export function renderDayTimeline(
   const dayTriggers = triggers.filter(t => t.enabled && t.days.includes(day));
   const slotMinutes = slotDuration * 60;
 
-  const slotSpans: SlotSpan[] = dayTriggers.map(t => {
-    const start = parseTime(t.time);
-    const end = (start + slotMinutes) % 1440;
-    return { start, end, type: 'slot' as const };
-  });
-
   const dayWindows = getWindowsForDay(day, smartConfigs);
-  const workSpans: SlotSpan[] = dayWindows.map(w => {
-    const start = parseTime(w.start);
-    const end = parseTime(w.end);
-    return { start, end, type: 'work' as const };
-  });
+  const workSpans = dayWindows.map(w => ({
+    start: parseTime(w.start),
+    end: parseTime(w.end),
+  }));
 
-  const lines: string[] = [];
-  const label = `  ${dayShort(day).padEnd(4)}`;
+  const pingMinutes = new Set(dayTriggers.map(t => parseTime(t.time)));
+  const renewalMinutes = new Set<number>();
 
-  const grid: ('ping' | 'slot' | ' ')[] = new Array(COLS).fill(' ');
-  for (const span of slotSpans) {
-    const start = minuteToCol(span.start);
-    const end = minuteToCol(span.end);
-    if (end <= start) {
-      for (let i = start; i < COLS; i++) grid[i] = 'slot';
-      for (let i = 0; i < end; i++) grid[i] = 'slot';
-    } else {
-      for (let i = start; i < Math.min(end, COLS); i++) grid[i] = 'slot';
+  const allSlots: { start: number; end: number }[] = [];
+  for (const t of dayTriggers) {
+    const pingTime = parseTime(t.time);
+    let currentStart = pingTime;
+    const maxRenewals = Math.ceil(1440 / slotMinutes);
+    for (let i = 0; i < maxRenewals; i++) {
+      const end = (currentStart + slotMinutes) % 1440;
+      allSlots.push({ start: currentStart, end });
+      if (isTimeInSpans(end, workSpans) && !pingMinutes.has(end)) {
+        renewalMinutes.add(end);
+        currentStart = end;
+      } else {
+        break;
+      }
     }
   }
-  for (const t of dayTriggers) {
-    const col = minuteToCol(parseTime(t.time));
+
+  const grid: CellType[] = new Array(COLS).fill('empty');
+
+  for (const span of allSlots) {
+    fillGrid(grid, span.start, span.end, 'slot');
+  }
+
+  for (const span of workSpans) {
+    fillGrid(grid, span.start, span.end, 'work');
+  }
+
+  for (const min of renewalMinutes) {
+    const col = minuteToCol(min);
+    if (col < COLS) grid[col] = 'renewal';
+  }
+
+  for (const min of pingMinutes) {
+    const col = minuteToCol(min);
     if (col < COLS) grid[col] = 'ping';
   }
-  const slotRow = grid.map(c =>
-    c === 'ping' ? chalk.red('⚡') : c === 'slot' ? chalk.yellow('─') : ' '
-  ).join('');
-  lines.push(`${label} ${slotRow}`);
 
-  const workRow = renderRow(workSpans, '█', chalk.green);
-  lines.push(`${''.padEnd(6)}${workRow}`);
+  const rowStr = grid.map(cell => {
+    switch (cell) {
+      case 'ping': return chalk.red('⚡');
+      case 'renewal': return chalk.cyan('●');
+      case 'work': return chalk.green('█');
+      case 'slot': return chalk.gray('█');
+      default: return ' ';
+    }
+  }).join('');
 
-  return lines.join('\n');
+  const label = `  ${dayShort(day).padEnd(LABEL_WIDTH - 2)}`;
+  return `${label}${rowStr}`;
 }
 
 export function renderTimeline(
@@ -140,15 +157,15 @@ export function renderTimeline(
   lines.push('');
   lines.push(chalk.bold('  Schedule Timeline'));
   lines.push('');
-  lines.push(`${''.padEnd(6)}${renderHourHeader()}`);
-  lines.push(`${''.padEnd(6)}${renderHourTicks()}`);
+  lines.push(`${''.padEnd(LABEL_WIDTH)}${renderHourHeader()}`);
+  lines.push(`${''.padEnd(LABEL_WIDTH)}${renderHourTicks()}`);
 
   for (const day of days) {
     lines.push(renderDayTimeline(day, triggers, smartConfigs, slotDuration));
   }
 
   lines.push('');
-  lines.push(chalk.dim(`  ${chalk.red('⚡')} ping  ${chalk.yellow('─')} slot (${slotDuration}h)  ${chalk.green('█')} work window`));
+  lines.push(chalk.dim(`  ${chalk.red('⚡')} ping  ${chalk.cyan('●')} renew  ${chalk.green('█')} work  ${chalk.gray('█')} slot (${slotDuration}h)`));
   lines.push('');
 
   return lines.join('\n');

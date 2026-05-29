@@ -12,6 +12,7 @@ export async function removeCommand(id: string): Promise<void> {
     return;
   }
 
+  let schedulerFailed = false;
   try {
     const scheduler = createScheduler();
     await scheduler.remove(id);
@@ -21,9 +22,14 @@ export async function removeCommand(id: string): Promise<void> {
       // Not installed in scheduler — that's fine
     } else {
       display.warn(`Scheduler removal failed: ${msg}. Trigger removed from config only.`);
+      schedulerFailed = true;
     }
   }
 
   saveConfig(config);
-  display.success(`Trigger ${id} removed.`);
+  if (schedulerFailed) {
+    display.info(`Trigger ${id} removed from config. Run \`claude-shift uninstall\` to clean scheduler.`);
+  } else {
+    display.success(`Trigger ${id} removed.`);
+  }
 }
