@@ -1,6 +1,6 @@
 {
   "name": "claude-shift",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Optimize your Claude Max 5-hour slots by scheduling strategic session pings",
   "type": "module",
   "bin": {

@@ -364,6 +364,13 @@ function handleRetry(triggerId, isRetry, retryIndex, originalTime) {
 }
 
 async function main() {
+  const nodeBinDir = path.dirname(process.execPath);
+  if (process.env.PATH && !process.env.PATH.split(path.delimiter).includes(nodeBinDir)) {
+    process.env.PATH = nodeBinDir + path.delimiter + process.env.PATH;
+  } else if (!process.env.PATH) {
+    process.env.PATH = nodeBinDir;
+  }
+
   const triggerId = process.argv[2] || 'scheduled';
 
   const retryArgIdx = process.argv.indexOf('--retry');
@@ -409,7 +416,12 @@ async function main() {
     }
 
     let done = false;
-    const proc = pty.spawn(claudePath, [], {
+    const isWinScript = process.platform === 'win32' &&
+      /\.(cmd|bat)$/i.test(claudePath);
+    const spawnFile = isWinScript ? 'cmd.exe' : claudePath;
+    const spawnArgs = isWinScript ? ['/c', claudePath] : [];
+
+    const proc = pty.spawn(spawnFile, spawnArgs, {
       name: 'xterm-256color',
       cols: 80,
       rows: 24,

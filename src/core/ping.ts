@@ -66,7 +66,12 @@ export async function executePing(claudePath: string, message: string, triggerId
         resolve(result);
       }
 
-      const proc = pty.spawn(resolved, [], {
+      const isWinScript = process.platform === 'win32' &&
+        /\.(cmd|bat)$/i.test(resolved);
+      const spawnFile = isWinScript ? 'cmd.exe' : resolved;
+      const spawnArgs = isWinScript ? ['/c', resolved] : [];
+
+      const proc = pty.spawn(spawnFile, spawnArgs, {
         name: 'xterm-256color',
         cols: 80,
         rows: 24,
