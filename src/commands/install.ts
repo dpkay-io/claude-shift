@@ -62,6 +62,11 @@ export async function installCommand(): Promise<void> {
     }
   }
 
+  if (!config.settings.pingPath) {
+    display.warn('pingPath is not set — scheduled pings will run from the home directory.');
+    display.info('Set it with: claude-shift config set pingPath /path/to/project');
+  }
+
   let installed = 0;
   let failed = 0;
 

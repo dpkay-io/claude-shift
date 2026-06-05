@@ -36,6 +36,7 @@ function freshConfig(overrides: Record<string, unknown> = {}): void {
       burnRate: 2,
       claudePath: 'claude',
       nodePath: process.execPath,
+      pingPath: '',
       pingMessage: 'ping',
       retryEnabled: true,
       retryIntervals: [5, 15, 30, 45, 60],
@@ -101,7 +102,7 @@ describe('CLI E2E', () => {
     it('get (no key) shows all settings', () => {
       const r = cli('config', 'get');
       expect(r.exitCode).toBe(0);
-      for (const key of ['slotDuration', 'burnRate', 'claudePath', 'nodePath', 'pingMessage', 'retryEnabled', 'retryIntervals']) {
+      for (const key of ['slotDuration', 'burnRate', 'claudePath', 'nodePath', 'pingPath', 'pingMessage', 'retryEnabled', 'retryIntervals']) {
         expect(r.stdout).toContain(key);
       }
     });
@@ -160,6 +161,19 @@ describe('CLI E2E', () => {
     it('set rejects invalid array', () => {
       const r = cli('config', 'set', 'retryIntervals', 'a,b,c');
       expect(r.stdout).toContain('comma-separated positive integers');
+    });
+
+    it('set pingPath to valid directory', () => {
+      const r = cli('config', 'set', 'pingPath', os.homedir());
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toContain(`pingPath = ${os.homedir()}`);
+      const v = cli('config', 'get', 'pingPath');
+      expect(v.stdout).toContain(os.homedir());
+    });
+
+    it('set pingPath rejects non-existent directory', () => {
+      const r = cli('config', 'set', 'pingPath', '/no/such/path/here');
+      expect(r.stdout).toContain('must be an existing directory');
     });
 
     it('set rejects unknown key', () => {

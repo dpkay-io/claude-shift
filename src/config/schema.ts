@@ -33,6 +33,7 @@ export interface Settings {
   burnRate: number; // hours, default 2
   claudePath: string; // auto-detected or manual
   nodePath: string; // auto-detected
+  pingPath: string; // working directory for pings
   pingMessage: string;
   retryEnabled: boolean;
   retryIntervals: number[]; // minutes from original trigger time

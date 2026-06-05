@@ -50,7 +50,7 @@ function validatePath(p: string): void {
   }
 }
 
-export async function executePing(claudePath: string, message: string, triggerId: string = 'manual'): Promise<PingResult> {
+export async function executePing(claudePath: string, message: string, triggerId: string = 'manual', cwd?: string): Promise<PingResult> {
   validatePath(claudePath);
   const resolved = path.isAbsolute(claudePath) ? claudePath : resolveExePath(claudePath);
   const start = Date.now();
@@ -70,7 +70,7 @@ export async function executePing(claudePath: string, message: string, triggerId
         name: 'xterm-256color',
         cols: 80,
         rows: 24,
-        cwd: process.cwd(),
+        cwd: cwd || process.cwd(),
       });
 
       let output = '';

@@ -86,7 +86,7 @@ program
 
 const configCmd = program
   .command('config')
-  .description('View or modify settings (slotDuration, burnRate, claudePath, nodePath, pingMessage)');
+  .description('View or modify settings (slotDuration, burnRate, claudePath, nodePath, pingPath, pingMessage)');
 
 configCmd
   .command('get [key]')
@@ -96,6 +96,7 @@ configCmd
 configCmd
   .command('set <key> <value>')
   .description('Set a configuration value')
+  .option('--verify', 'Run a validation ping after setting pingPath')
   .action(configSetCommand);
 
 program.parse();

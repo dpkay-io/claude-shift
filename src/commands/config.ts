@@ -1,5 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { loadConfig, saveConfig } from '../config/manager.js';
 import type { Settings } from '../config/schema.js';
+import { executePing } from '../core/ping.js';
 import * as display from '../utils/display.js';
 import chalk from 'chalk';
 
@@ -8,6 +11,7 @@ const SETTABLE_KEYS: (keyof Settings)[] = [
   'burnRate',
   'claudePath',
   'nodePath',
+  'pingPath',
   'pingMessage',
   'retryEnabled',
   'retryIntervals',
@@ -31,6 +35,13 @@ function parseSetting(key: keyof Settings, value: string): { parsed: unknown } |
     const num = parseFloat(value);
     if (isNaN(num) || num <= 0) return { error: `${key} must be a positive number.` };
     return { parsed: num };
+  }
+  if (key === 'pingPath') {
+    const resolved = path.resolve(value);
+    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+      return { error: `pingPath must be an existing directory. "${value}" not found.` };
+    }
+    return { parsed: resolved };
   }
   return { parsed: value };
 }
@@ -61,7 +72,7 @@ export function configGetCommand(key?: string): void {
   console.log(`${key}: ${config.settings[key]}`);
 }
 
-export function configSetCommand(key: string, value: string): void {
+export async function configSetCommand(key: string, value: string, options?: { verify?: boolean }): Promise<void> {
   if (!isSettableKey(key)) {
     display.error(`Unknown setting: ${key}`);
     console.log(`  Available: ${SETTABLE_KEYS.join(', ')}`);
@@ -77,5 +88,23 @@ export function configSetCommand(key: string, value: string): void {
 
   (config.settings as unknown as Record<string, unknown>)[key] = result.parsed;
   saveConfig(config);
-  display.success(`${key} = ${value}`);
+  display.success(`${key} = ${result.parsed}`);
+
+  if (key === 'pingPath' && options?.verify) {
+    display.info('Running validation ping from the new path...');
+    const pingResult = await executePing(
+      config.settings.claudePath,
+      config.settings.pingMessage,
+      'validation',
+      result.parsed as string,
+    );
+    if (pingResult.success) {
+      display.success('Validation ping succeeded — path is good.');
+    } else {
+      display.warn(`Validation ping failed: ${pingResult.error}`);
+      display.info('The path was saved, but pings may fail at runtime. Verify claudePath and pingPath are correct.');
+    }
+  } else if (key === 'pingPath') {
+    display.info('Run `claude-shift ping` to verify the path works.');
+  }
 }

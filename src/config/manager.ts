@@ -27,6 +27,7 @@ function validateConfig(raw: unknown): Config {
     burnRate: typeof rawSettings.burnRate === 'number' && rawSettings.burnRate > 0 ? rawSettings.burnRate : defSettings.burnRate,
     claudePath: typeof rawSettings.claudePath === 'string' && rawSettings.claudePath ? rawSettings.claudePath : defSettings.claudePath,
     nodePath: typeof rawSettings.nodePath === 'string' && rawSettings.nodePath ? rawSettings.nodePath : defSettings.nodePath,
+    pingPath: typeof rawSettings.pingPath === 'string' ? rawSettings.pingPath : defSettings.pingPath,
     pingMessage: typeof rawSettings.pingMessage === 'string' && rawSettings.pingMessage ? rawSettings.pingMessage : defSettings.pingMessage,
     retryEnabled: typeof rawSettings.retryEnabled === 'boolean' ? rawSettings.retryEnabled : defSettings.retryEnabled,
     retryIntervals: Array.isArray(rawSettings.retryIntervals) && rawSettings.retryIntervals.length > 0 && rawSettings.retryIntervals.every((n: unknown) => typeof n === 'number' && n > 0)

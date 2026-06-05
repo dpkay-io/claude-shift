@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import readline from 'node:readline/promises';
 import { loadConfig, saveConfig, addTrigger } from '../config/manager.js';
 import { findClaude } from '../utils/claude-check.js';
@@ -41,6 +43,20 @@ export async function initCommand(): Promise<void> {
       const manual = await ask(rl, 'Path to claude CLI');
       if (manual) config.settings.claudePath = manual;
     }
+
+    // Ping path — working directory for pings
+    const detectedPingPath = process.cwd();
+    let pingPath = detectedPingPath;
+    while (true) {
+      const pingPathInput = await ask(rl, 'Directory to ping from', detectedPingPath);
+      const resolved = path.resolve(pingPathInput || detectedPingPath);
+      if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+        pingPath = resolved;
+        break;
+      }
+      display.warn(`"${pingPathInput}" is not an existing directory. Try again.`);
+    }
+    config.settings.pingPath = pingPath;
 
     // Slot duration
     const slotStr = await ask(rl, 'Slot duration in hours', String(config.settings.slotDuration));

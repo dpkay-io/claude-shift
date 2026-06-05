@@ -163,8 +163,10 @@ claude-shift ping         # Test a ping right now
 Config is stored at `~/.claude-shift/config.json`. Logs at `~/.claude-shift/ping.log`.
 
 ```bash
-claude-shift config get             # Show all settings
-claude-shift config set burnRate 3  # Update a setting
+claude-shift config get                          # Show all settings
+claude-shift config set burnRate 3               # Update a setting
+claude-shift config set pingPath /path/to/project  # Set ping working directory
+claude-shift config set pingPath /path --verify  # Set and validate with a test ping
 ```
 
 | Setting | Default | Description |
@@ -173,6 +175,7 @@ claude-shift config set burnRate 3  # Update a setting
 | `burnRate` | `2` | How long a window typically lasts for you (hours) |
 | `claudePath` | `claude` | Path to Claude CLI binary |
 | `nodePath` | *(auto-detected)* | Path to Node.js binary |
+| `pingPath` | *(empty)* | Working directory for pings (falls back to home dir) |
 | `pingMessage` | `ping` | Message sent to start the session |
 
 ## Platform notes

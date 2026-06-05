@@ -12,6 +12,7 @@ export function defaultSettings(): Settings {
     burnRate: 2,
     claudePath: 'claude',
     nodePath: process.execPath,
+    pingPath: '',
     pingMessage: 'ping',
     retryEnabled: true,
     retryIntervals: [5, 15, 30, 45, 60],

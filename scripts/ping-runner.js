@@ -156,6 +156,14 @@ function loadPingMessage(config) {
   return 'ping';
 }
 
+function loadPingPath(config) {
+  if (typeof config?.settings?.pingPath === 'string' && config.settings.pingPath) {
+    const p = config.settings.pingPath;
+    if (fs.existsSync(p)) return p;
+  }
+  return os.homedir();
+}
+
 function disableOnceTrigger(triggerId) {
   try {
     const config = loadConfig();
@@ -390,6 +398,7 @@ async function main() {
     const config = loadConfig();
     const claudePath = loadClaudePath(config);
     const message = loadPingMessage(config);
+    const pingCwd = loadPingPath(config);
 
     if (!claudePath || SHELL_META.test(claudePath)) {
       throw new Error(`Invalid claudePath: "${claudePath}"`);
@@ -404,7 +413,7 @@ async function main() {
       name: 'xterm-256color',
       cols: 80,
       rows: 24,
-      cwd: os.homedir(),
+      cwd: pingCwd,
     });
 
     let output = '';

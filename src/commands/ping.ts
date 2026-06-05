@@ -9,6 +9,8 @@ export async function pingCommand(): Promise<void> {
   const result = await executePing(
     config.settings.claudePath,
     config.settings.pingMessage,
+    'manual',
+    config.settings.pingPath || undefined,
   );
 
   if (result.success) {
