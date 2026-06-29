@@ -67,6 +67,19 @@ export async function installCommand(): Promise<void> {
     display.info('Set it with: claude-shift config set pingPath /path/to/project');
   }
 
+  const enabledIds = new Set(enabled.map(t => t.id));
+  const existing = await scheduler.list();
+  let orphansRemoved = 0;
+  for (const task of existing) {
+    if (!enabledIds.has(task.id)) {
+      try {
+        await scheduler.remove(task.id);
+        display.info(`Removed orphaned task: ${task.id}`);
+        orphansRemoved++;
+      } catch {}
+    }
+  }
+
   let installed = 0;
   let failed = 0;
 

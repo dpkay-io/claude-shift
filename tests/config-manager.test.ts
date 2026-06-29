@@ -43,7 +43,8 @@ describe('config manager', () => {
       addTrigger(config, { time: '20:00', days: ['mon'], source: 'smart', enabled: true });
 
       const removed = clearSmartTriggers(config);
-      expect(removed).toBe(2);
+      expect(removed).toHaveLength(2);
+      expect(removed.every(t => t.source === 'smart')).toBe(true);
       expect(config.triggers).toHaveLength(1);
       expect(config.triggers[0]!.source).toBe('manual');
     });
@@ -53,7 +54,8 @@ describe('config manager', () => {
       addTrigger(config, { time: '10:00', days: ['sat', 'sun'], source: 'smart', enabled: true });
 
       const removed = clearSmartTriggers(config, ['sat', 'sun']);
-      expect(removed).toBe(1);
+      expect(removed).toHaveLength(1);
+      expect(removed[0]!.days).toEqual(['sat', 'sun']);
       expect(config.triggers).toHaveLength(1);
       expect(config.triggers[0]!.days).toEqual(['mon', 'tue', 'wed', 'thu', 'fri']);
     });

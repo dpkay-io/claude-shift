@@ -18,6 +18,16 @@ export async function pingCommand(): Promise<void> {
     if (result.response) {
       console.log(`  Response: ${result.response}`);
     }
+  } else if (result.limitType) {
+    display.error(`Ping failed: ${result.limitType} usage limit hit`);
+    if (result.resetTime) {
+      const resetStr = result.resetTime.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+      display.info(`  Limit resets: ${resetStr}`);
+    }
+    if (result.limitType === 'monthly') {
+      display.info('  Action required: adjust your monthly spend limit via /usage-credits');
+    }
+    process.exitCode = 1;
   } else {
     display.error(`Ping failed: ${result.error}`);
     process.exitCode = 1;

@@ -1,3 +1,5 @@
+[![Claude Code](https://img.shields.io/badge/Claude_Code-cc785c)](https://github.com/dpkay-io/claude-shift) [![Platform](https://img.shields.io/badge/platform-windows%20%7C%20macos%20%7C%20linux-blue)](https://github.com/dpkay-io/claude-shift) [![License](https://img.shields.io/npm/l/claude-shift)](https://github.com/dpkay-io/claude-shift) [![Productivity](https://img.shields.io/badge/productivity-blue)](https://github.com/dpkay-io/claude-shift) [![AI Tools](https://img.shields.io/badge/ai--tools-blueviolet)](https://github.com/dpkay-io/claude-shift) [![Downloads](https://img.shields.io/npm/dt/claude-shift)](https://github.com/dpkay-io/claude-shift) [![npm version](https://img.shields.io/npm/v/claude-shift)](https://github.com/dpkay-io/claude-shift) [![Node version](https://img.shields.io/node/v/claude-shift)](https://github.com/dpkay-io/claude-shift)
+
 # claude-shift
 
 **Always have a fresh Claude session when you start working.**

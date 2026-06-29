@@ -242,24 +242,19 @@ function escapeXml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
-function scheduleRetryTask(triggerId, retryTime, nextRetryIndex, originalTime, config) {
-  const taskId = `retry-${triggerId}`;
-  const nodePath = config?.settings?.nodePath || process.execPath;
-  const scriptPath = fileURLToPath(import.meta.url);
+function scheduleOsTask(taskId, taskTime, command) {
   const date = todayDateStr();
-  const command = `"${nodePath}" "${scriptPath}" "${triggerId}" --retry ${nextRetryIndex} --original-time ${originalTime}`;
-
   if (process.platform === 'win32') {
     const [y, m, d] = date.split('-');
     const sd = `${m}/${d}/${y}`;
     const name = `claude-shift-${taskId}`;
     try { execFileSync('schtasks', ['/delete', '/tn', name, '/f'], { stdio: 'pipe', timeout: 15000 }); } catch {}
-    execFileSync('schtasks', ['/create', '/tn', name, '/tr', command, '/sc', 'ONCE', '/sd', sd, '/st', retryTime, '/rl', 'LIMITED', '/f'], { stdio: 'pipe', timeout: 15000 });
+    execFileSync('schtasks', ['/create', '/tn', name, '/tr', command, '/sc', 'ONCE', '/sd', sd, '/st', taskTime, '/rl', 'LIMITED', '/f'], { stdio: 'pipe', timeout: 15000 });
   } else if (process.platform === 'darwin') {
     const plistDir = path.join(os.homedir(), 'Library', 'LaunchAgents');
     const label = `com.claude-shift.${taskId}`;
     const plistFile = path.join(plistDir, `${label}.plist`);
-    const [hours, minutes] = retryTime.split(':').map(Number);
+    const [hours, minutes] = taskTime.split(':').map(Number);
     const [, month, day] = date.split('-').map(Number);
 
     fs.mkdirSync(plistDir, { recursive: true });
@@ -299,7 +294,7 @@ ${argsXml}
     fs.writeFileSync(plistFile, plist, 'utf-8');
     execFileSync('launchctl', ['load', plistFile], { stdio: 'pipe' });
   } else {
-    const [hours, minutes] = retryTime.split(':');
+    const [hours, minutes] = taskTime.split(':');
     const [, mo, dy] = date.split('-');
     const tag = `# claude-shift:${taskId}`;
     const entry = `${parseInt(minutes)} ${parseInt(hours)} ${parseInt(dy)} ${parseInt(mo)} * ${command} ${tag}`;
@@ -309,6 +304,120 @@ ${argsXml}
     crontab = crontab.trimEnd() + '\n' + entry + '\n';
     execFileSync('crontab', ['-'], { input: crontab, encoding: 'utf-8', timeout: 5000 });
   }
+}
+
+function scheduleRetryTask(triggerId, retryTime, nextRetryIndex, originalTime, config) {
+  const nodePath = config?.settings?.nodePath || process.execPath;
+  const scriptPath = fileURLToPath(import.meta.url);
+  const command = `"${nodePath}" "${scriptPath}" "${triggerId}" --retry ${nextRetryIndex} --original-time ${originalTime}`;
+  scheduleOsTask(`retry-${triggerId}`, retryTime, command);
+}
+
+// --- Limit detection ---
+
+const MONTH_NAMES = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+function detectLimitHit(response) {
+  if (!response) return null;
+  const lower = response.toLowerCase();
+  if (lower.includes('monthly spend limit') || lower.includes('monthly limit')) {
+    return { type: 'monthly', retryable: false };
+  }
+  if (lower.includes('weekly limit')) {
+    return { type: 'weekly', retryable: true };
+  }
+  if (lower.includes('daily limit')) {
+    return { type: 'daily', retryable: true };
+  }
+  if (/(?:hit|reached|exceeded)\b.*\blimit\b|\blimit\b.*\b(?:hit|reached|exceeded)\b/i.test(response)) {
+    return { type: 'unknown', retryable: true };
+  }
+  return null;
+}
+
+function parseResetTime(response) {
+  if (!response) return null;
+  const match = response.match(/resets?\s+(\w+)\s+(\d{1,2}),?\s*(\d{1,2}):(\d{2})\s*(am|pm)/i);
+  if (!match) return null;
+  const [, monthStr, dayStr, hourStr, minuteStr, ampm] = match;
+  const month = MONTH_NAMES[monthStr.toLowerCase().slice(0, 3)];
+  if (month === undefined) return null;
+  let hour = parseInt(hourStr, 10);
+  const minute = parseInt(minuteStr, 10);
+  if (ampm.toLowerCase() === 'pm' && hour !== 12) hour += 12;
+  if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0;
+  const now = new Date();
+  const resetDate = new Date(now.getFullYear(), month, parseInt(dayStr, 10), hour, minute, 0);
+  if (resetDate.getTime() < now.getTime() - 24 * 60 * 60 * 1000) {
+    resetDate.setFullYear(resetDate.getFullYear() + 1);
+  }
+  return resetDate;
+}
+
+function formatDateStr(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+const LIMIT_RETRY_BUFFER_MINUTES = 3;
+
+function handleLimitRetry(triggerId, limitType, resetTime, isLimitRetry) {
+  if (isLimitRetry) {
+    log(`RETRY trigger=${triggerId} status=exhausted detail="limit-retry failed again (${limitType})"`);
+    return;
+  }
+
+  if (!limitType || limitType === 'monthly') {
+    log(`RETRY trigger=${triggerId} status=skip detail="monthly limit hit — manual action required (/usage-credits)"`);
+    return;
+  }
+
+  if (!resetTime) {
+    log(`RETRY trigger=${triggerId} status=skip detail="${limitType} limit hit but reset time not parseable from response"`);
+    return;
+  }
+
+  const now = new Date();
+  if (resetTime.getTime() <= now.getTime()) {
+    log(`RETRY trigger=${triggerId} status=skip detail="${limitType} limit — reset time already passed (${formatLocalTime(resetTime)})"`);
+    return;
+  }
+
+  const config = loadConfig();
+  const trigger = config?.triggers?.find(t => t.id === triggerId);
+
+  if (trigger?.smartMeta?.targetSlotEnd) {
+    const slotEndMinutes = timeToMinutes(trigger.smartMeta.targetSlotEnd);
+    const resetMinutes = resetTime.getHours() * 60 + resetTime.getMinutes();
+    const resetDateStr = formatDateStr(resetTime);
+    const today = todayDateStr();
+    if (resetDateStr !== today || resetMinutes >= slotEndMinutes) {
+      log(`RETRY trigger=${triggerId} status=skip detail="${limitType} limit — reset at ${formatLocalTime(resetTime)} is outside shift window (ends ${trigger.smartMeta.targetSlotEnd})"`);
+      return;
+    }
+  } else {
+    const resetDateStr = formatDateStr(resetTime);
+    if (resetDateStr !== todayDateStr()) {
+      log(`RETRY trigger=${triggerId} status=skip detail="${limitType} limit — reset is on a future date (${formatLocalTime(resetTime)})"`);
+      return;
+    }
+  }
+
+  const retryDate = new Date(resetTime.getTime() + LIMIT_RETRY_BUFFER_MINUTES * 60 * 1000);
+  const retryHH = String(retryDate.getHours()).padStart(2, '0');
+  const retryMM = String(retryDate.getMinutes()).padStart(2, '0');
+  const retryTime = `${retryHH}:${retryMM}`;
+
+  if (timeToMinutes(retryTime) >= 24 * 60 - 1) {
+    log(`RETRY trigger=${triggerId} status=skip detail="${limitType} limit — retry time ${retryTime} would cross midnight"`);
+    return;
+  }
+
+  const nodePath = config?.settings?.nodePath || process.execPath;
+  const scriptPath = fileURLToPath(import.meta.url);
+  const command = `"${nodePath}" "${scriptPath}" "${triggerId}" --limit-retry`;
+  scheduleOsTask(`limit-retry-${triggerId}`, retryTime, command);
+  log(`RETRY trigger=${triggerId} status=scheduled detail="${limitType} limit — retry at ${retryTime} (resets ${formatLocalTime(resetTime)})"`);
 }
 
 function handleRetry(triggerId, isRetry, retryIndex, originalTime) {
@@ -378,6 +487,7 @@ async function main() {
   const retryIndex = isRetry ? parseInt(process.argv[retryArgIdx + 1], 10) : -1;
   const origTimeIdx = process.argv.indexOf('--original-time');
   const originalTime = origTimeIdx !== -1 ? process.argv[origTimeIdx + 1] : null;
+  const isLimitRetry = process.argv.includes('--limit-retry');
 
   process.on('SIGTERM', () => { releaseLock(); process.exit(0); });
   process.on('SIGINT', () => { releaseLock(); process.exit(0); });
@@ -396,7 +506,7 @@ async function main() {
     process.exit(1);
   }
 
-  const retryLabel = isRetry ? ` retry=${retryIndex + 1}` : '';
+  const retryLabel = isRetry ? ` retry=${retryIndex + 1}` : isLimitRetry ? ' limit-retry' : '';
   log(`PING trigger=${triggerId}${retryLabel} status=starting`);
   const start = Date.now();
 
@@ -445,6 +555,16 @@ async function main() {
       const duration = Date.now() - start;
       const resp = responseOutput ? extractResponse(responseOutput, message) : '';
       const respPart = resp ? ` response="${sanitizeLog(resp)}"` : '';
+      const limit = detectLimitHit(resp);
+      if (limit) {
+        const resetTime = limit.retryable ? parseResetTime(resp) : null;
+        const resetDetail = resetTime ? ` resets=${formatLocalTime(resetTime)}` : '';
+        log(`PING trigger=${triggerId}${retryLabel} status=limit-${limit.type} detail="timeout after ${duration}ms${resetDetail}"${respPart}`);
+        handleLimitRetry(triggerId, limit.type, resetTime, isLimitRetry);
+        releaseLock();
+        process.exit(1);
+        return;
+      }
       log(`PING trigger=${triggerId}${retryLabel} status=success detail="timeout after ${duration}ms — session was started"${respPart}`);
       disableOnceTrigger(triggerId);
       releaseLock();
@@ -495,10 +615,22 @@ async function main() {
       const ok = exitCode === 0 || exitCode === null;
       const resp = responseOutput ? extractResponse(responseOutput, message) : '';
       const respPart = resp ? ` response="${sanitizeLog(resp)}"` : '';
-      log(`PING trigger=${triggerId}${retryLabel} status=${ok ? 'success' : 'error'} detail="exit=${exitCode} duration=${duration}ms"${respPart}`);
+
       if (ok) {
+        const limit = detectLimitHit(resp);
+        if (limit) {
+          const resetTime = limit.retryable ? parseResetTime(resp) : null;
+          const resetDetail = resetTime ? ` resets=${formatLocalTime(resetTime)}` : '';
+          log(`PING trigger=${triggerId}${retryLabel} status=limit-${limit.type} detail="exit=${exitCode} duration=${duration}ms${resetDetail}"${respPart}`);
+          handleLimitRetry(triggerId, limit.type, resetTime, isLimitRetry);
+          releaseLock();
+          process.exit(1);
+          return;
+        }
+        log(`PING trigger=${triggerId}${retryLabel} status=success detail="exit=${exitCode} duration=${duration}ms"${respPart}`);
         disableOnceTrigger(triggerId);
       } else {
+        log(`PING trigger=${triggerId}${retryLabel} status=error detail="exit=${exitCode} duration=${duration}ms"${respPart}`);
         handleRetry(triggerId, isRetry, retryIndex, originalTime);
       }
       releaseLock();

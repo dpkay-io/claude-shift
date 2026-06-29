@@ -2,6 +2,7 @@ import readline from 'node:readline/promises';
 import { loadConfig, saveConfig, addTrigger, clearSmartTriggers, getSmartConfigs } from '../config/manager.js';
 import { parseDays, parseTime, parseSlots, formatTime12h, formatDays } from '../core/time-utils.js';
 import { calculatePings, explainPing } from '../core/smart-calculator.js';
+import { createScheduler } from '../scheduler/factory.js';
 import type { DayOfWeek, WorkWindow } from '../config/schema.js';
 import * as display from '../utils/display.js';
 import { toErrorMessage } from '../utils/text.js';
@@ -62,8 +63,12 @@ export async function smartCommand(options: { slots: string; days?: string; burn
   }
 
   const removed = clearSmartTriggers(config, days);
-  if (removed > 0) {
-    display.info(`Replaced ${removed} previous smart trigger(s).`);
+  if (removed.length > 0) {
+    const scheduler = createScheduler();
+    for (const t of removed) {
+      try { await scheduler.remove(t.id); } catch {}
+    }
+    display.info(`Replaced ${removed.length} previous smart trigger(s) (config + scheduler).`);
   }
 
   const smartConfigs = getSmartConfigs(config).filter(s => !s.days.some(d => days.includes(d)));

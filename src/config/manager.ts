@@ -99,15 +99,15 @@ export function findTrigger(config: Config, id: string): Trigger | undefined {
   return config.triggers.find(t => t.id === id);
 }
 
-export function clearSmartTriggers(config: Config, days?: DayOfWeek[]): number {
-  const before = config.triggers.length;
+export function clearSmartTriggers(config: Config, days?: DayOfWeek[]): Trigger[] {
+  const removed: Trigger[] = [];
   config.triggers = config.triggers.filter(t => {
     if (t.source !== 'smart') return true;
-    if (!days) return false;
-    const hasOverlap = t.days.some(d => days.includes(d));
-    return !hasOverlap;
+    if (!days) { removed.push(t); return false; }
+    if (t.days.some(d => days.includes(d))) { removed.push(t); return false; }
+    return true;
   });
-  return before - config.triggers.length;
+  return removed;
 }
 
 export function getSmartConfigs(config: Config): SmartConfig[] {

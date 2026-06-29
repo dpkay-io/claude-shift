@@ -27,7 +27,7 @@ function formatLocalTime(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-export function logPing(triggerId: string, status: 'success' | 'error', detail?: string, response?: string): void {
+export function logPing(triggerId: string, status: string, detail?: string, response?: string): void {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   const filePath = LOG_FILE;
   rotateIfNeeded(filePath);
