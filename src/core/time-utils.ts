@@ -112,8 +112,11 @@ export function parseDate(input: string): string {
   const match = input.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) throw new Error(`Invalid date format: "${input}" (expected YYYY-MM-DD)`);
   const [, y, m, d] = match;
-  const date = new Date(parseInt(y!, 10), parseInt(m!, 10) - 1, parseInt(d!, 10));
-  if (isNaN(date.getTime())) throw new Error(`Invalid date: "${input}"`);
+  const yi = parseInt(y!, 10), mi = parseInt(m!, 10) - 1, di = parseInt(d!, 10);
+  const date = new Date(yi, mi, di);
+  if (isNaN(date.getTime()) || date.getFullYear() !== yi || date.getMonth() !== mi || date.getDate() !== di) {
+    throw new Error(`Invalid date: "${input}"`);
+  }
   return `${y}-${m}-${d}`;
 }
 
@@ -140,8 +143,9 @@ export function parseSlots(input: string): WorkWindow[] {
   return input.split(',').map(s => s.trim()).map(slot => {
     const match = slot.match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
     if (!match) throw new Error(`Invalid slot format: "${slot}" (expected HH:mm-HH:mm)`);
-    parseTime(match[1]!);
-    parseTime(match[2]!);
+    const startMin = parseTime(match[1]!);
+    const endMin = parseTime(match[2]!);
+    if (endMin <= startMin) throw new Error(`Invalid slot "${slot}": end time must be after start time. For overnight windows (e.g., 22:00–02:00), split into two: 22:00-23:59 and 00:00-02:00`);
     return { start: match[1]!, end: match[2]! };
   });
 }

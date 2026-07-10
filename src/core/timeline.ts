@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import type { Trigger, WorkWindow, SmartConfig, DayOfWeek } from '../config/schema.js';
-import { parseTime, dayShort, todayDateString, dateToDayOfWeek } from './time-utils.js';
+import { parseTime, dayShort, todayDateString, dateToDayOfWeek, formatDateShort } from './time-utils.js';
 
 const COLS = 72;
 const CHARS_PER_HOUR = COLS / 24;
@@ -146,6 +146,7 @@ export function renderTimeline(
   dates?: string[],
 ): string {
   const lines: string[] = [];
+  const todayStr = todayDateString();
 
   const hasPings = days.some((day, i) => triggers.some(t => {
     if (!t.enabled) return false;
@@ -164,15 +165,23 @@ export function renderTimeline(
     return lines.join('\n');
   }
 
+  let title = '  Schedule Timeline';
+  if (dates && dates.length === 1) {
+    title += ` — ${formatDateShort(dates[0]!)}`;
+  } else if (dates && dates.length > 1) {
+    title += ` — ${formatDateShort(dates[0]!)} to ${formatDateShort(dates[dates.length - 1]!)}`;
+  }
   lines.push('');
-  lines.push(chalk.bold('  Schedule Timeline'));
+  lines.push(chalk.bold(title));
   lines.push('');
   lines.push(`${''.padEnd(LABEL_WIDTH)}${renderHourHeader()}`);
   lines.push(`${''.padEnd(LABEL_WIDTH)}${renderHourTicks()}`);
 
   for (let i = 0; i < days.length; i++) {
     if (i > 0) lines.push('');
-    lines.push(renderDayTimeline(days[i]!, triggers, smartConfigs, slotDuration, dates?.[i]));
+    const isToday = dates?.[i] === todayStr;
+    const row = renderDayTimeline(days[i]!, triggers, smartConfigs, slotDuration, dates?.[i]);
+    lines.push(isToday ? chalk.bold(row) + chalk.dim(' ◀ today') : row);
   }
 
   lines.push('');

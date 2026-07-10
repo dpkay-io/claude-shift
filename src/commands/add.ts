@@ -1,4 +1,4 @@
-import { loadConfig, saveConfig, addTrigger } from '../config/manager.js';
+import { loadConfig, saveConfig, addTrigger, findDuplicateTrigger } from '../config/manager.js';
 import { parseTime, parseDays, parseDate, formatTime12h, formatDays, formatDateShort, todayDateString } from '../core/time-utils.js';
 import type { DayOfWeek } from '../config/schema.js';
 import * as display from '../utils/display.js';
@@ -10,12 +10,18 @@ export function addCommand(time: string, options: { days?: string; once?: string
   try {
     parseTime(time);
     if (options.once !== undefined) {
-      if (options.days && options.days !== 'weekdays') {
+      if (options.days) {
         display.error('Cannot use --once with --days.');
         process.exitCode = 1;
         return;
       }
       date = typeof options.once === 'string' ? parseDate(options.once) : todayDateString();
+      const today = todayDateString();
+      if (date < today) {
+        display.error(`Date ${formatDateShort(date)} is in the past.`);
+        process.exitCode = 1;
+        return;
+      }
       days = [];
     } else {
       days = options.days ? parseDays(options.days) : parseDays('weekdays');
@@ -26,6 +32,13 @@ export function addCommand(time: string, options: { days?: string; once?: string
     return;
   }
   const config = loadConfig();
+
+  if (!date) {
+    const dup = findDuplicateTrigger(config, time, days);
+    if (dup) {
+      display.warn(`A trigger at ${formatTime12h(parseTime(time))} on ${formatDays(days)} already exists (ID ${dup.id}).`);
+    }
+  }
 
   const trigger = addTrigger(config, {
     time,

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../config/manager.js';
 import { createScheduler } from '../scheduler/factory.js';
 import { isClaudeInstalled, findClaude } from '../utils/claude-check.js';
+import { formatTime12h, formatDays, formatDateShort, parseTime } from '../core/time-utils.js';
 import * as display from '../utils/display.js';
 import { SHELL_META, toErrorMessage } from '../utils/text.js';
 
@@ -87,7 +88,8 @@ export async function installCommand(): Promise<void> {
     const command = `"${nodePath}" "${pingScript}" "${trigger.id}"`;
     try {
       await scheduler.install({ id: trigger.id, command, time: trigger.time, days: trigger.days, ...(trigger.date ? { date: trigger.date } : {}) });
-      const schedule = trigger.date ? `${trigger.time} on ${trigger.date} (once)` : `${trigger.time} on ${trigger.days.join(',')}`;
+      const timeLabel = formatTime12h(parseTime(trigger.time));
+      const schedule = trigger.date ? `${timeLabel} on ${formatDateShort(trigger.date)} (once)` : `${timeLabel} on ${formatDays(trigger.days)}`;
       display.success(`${trigger.id}: ${schedule}`);
       installed++;
     } catch (err) {

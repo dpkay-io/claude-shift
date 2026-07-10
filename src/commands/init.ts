@@ -45,7 +45,7 @@ export async function initCommand(): Promise<void> {
     }
 
     // Ping path — working directory for pings
-    const detectedPingPath = process.cwd();
+    const detectedPingPath = process.env.HOME || process.env.USERPROFILE || process.cwd();
     let pingPath = detectedPingPath;
     while (true) {
       const pingPathInput = await ask(rl, 'Directory to ping from', detectedPingPath);
@@ -131,7 +131,7 @@ export async function initCommand(): Promise<void> {
       console.log();
       const doInstall = await ask(rl2, 'Install to OS scheduler now? (y/n)', 'y');
 
-      if (doInstall.toLowerCase() === 'y') {
+      if (['y', 'yes'].includes(doInstall.toLowerCase())) {
         await installCommand();
       } else {
         display.info('Run `claude-shift install` when ready.');

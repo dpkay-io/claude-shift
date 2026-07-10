@@ -123,9 +123,26 @@ export class LaunchdScheduler implements SchedulerBackend {
   async list(): Promise<InstalledTask[]> {
     if (!fs.existsSync(PLIST_DIR)) return [];
     const files = fs.readdirSync(PLIST_DIR).filter(f => f.startsWith(LABEL_PREFIX));
+
+    const REVERSE_DAY_MAP: Record<number, string> = { 1: 'sun', 2: 'mon', 3: 'tue', 4: 'wed', 5: 'thu', 6: 'fri', 7: 'sat' };
+
     return files.map(f => {
       const id = f.replace(LABEL_PREFIX, '').replace('.plist', '');
-      return { id, time: '', days: '', status: 'active' as const };
+      let time = '';
+      let days = '';
+      try {
+        const content = fs.readFileSync(path.join(PLIST_DIR, f), 'utf-8');
+        const hourMatch = content.match(/<key>Hour<\/key>\s*<integer>(\d+)<\/integer>/);
+        const minMatch = content.match(/<key>Minute<\/key>\s*<integer>(\d+)<\/integer>/);
+        if (hourMatch && minMatch) {
+          time = `${String(hourMatch[1]).padStart(2, '0')}:${String(minMatch[1]).padStart(2, '0')}`;
+        }
+        const weekdays = [...content.matchAll(/<key>Weekday<\/key>\s*<integer>(\d+)<\/integer>/g)];
+        if (weekdays.length > 0) {
+          days = weekdays.map(m => REVERSE_DAY_MAP[Number(m[1])] ?? m[1]).join(',');
+        }
+      } catch {}
+      return { id, time, days, status: 'active' as const };
     });
   }
 

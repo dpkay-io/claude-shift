@@ -66,6 +66,7 @@ export function configGetCommand(key?: string): void {
   if (!isSettableKey(key)) {
     display.error(`Unknown setting: ${key}`);
     console.log(`  Available: ${SETTABLE_KEYS.join(', ')}`);
+    process.exitCode = 1;
     return;
   }
 
@@ -76,6 +77,7 @@ export async function configSetCommand(key: string, value: string, options?: { v
   if (!isSettableKey(key)) {
     display.error(`Unknown setting: ${key}`);
     console.log(`  Available: ${SETTABLE_KEYS.join(', ')}`);
+    process.exitCode = 1;
     return;
   }
 
@@ -83,12 +85,20 @@ export async function configSetCommand(key: string, value: string, options?: { v
   const result = parseSetting(key, value);
   if ('error' in result) {
     display.error(result.error);
+    process.exitCode = 1;
     return;
   }
 
   (config.settings as unknown as Record<string, unknown>)[key] = result.parsed;
   saveConfig(config);
   display.success(`${key} = ${result.parsed}`);
+
+  if (key === 'burnRate' && (result.parsed as number) >= config.settings.slotDuration) {
+    display.warn(`Burn rate (${result.parsed}h) is >= slot duration (${config.settings.slotDuration}h). Smart mode pings will fire at window start with no pre-burn buffer.`);
+  }
+  if (key === 'slotDuration' && config.settings.burnRate >= (result.parsed as number)) {
+    display.warn(`Burn rate (${config.settings.burnRate}h) is >= slot duration (${result.parsed}h). Smart mode pings will fire at window start with no pre-burn buffer.`);
+  }
 
   if (key === 'pingPath' && options?.verify) {
     display.info('Running validation ping from the new path...');

@@ -1,5 +1,7 @@
 import { loadConfig, saveConfig, removeTrigger } from '../config/manager.js';
 import { createScheduler } from '../scheduler/factory.js';
+import { formatTime12h, formatDays, formatDateShort, parseTime } from '../core/time-utils.js';
+import type { DayOfWeek } from '../config/schema.js';
 import * as display from '../utils/display.js';
 import { toErrorMessage } from '../utils/text.js';
 
@@ -28,9 +30,15 @@ export async function removeCommand(id: string): Promise<void> {
   }
 
   saveConfig(config);
+
+  const timeLabel = formatTime12h(parseTime(trigger.time));
+  const schedule = trigger.date
+    ? `${timeLabel} on ${formatDateShort(trigger.date)} (once)`
+    : `${timeLabel} on ${formatDays(trigger.days as DayOfWeek[])}`;
+
   if (schedulerFailed) {
-    display.info(`Trigger ${id} removed from config. Run \`claude-shift uninstall\` to clean scheduler.`);
+    display.info(`Trigger ${id} removed from config (${schedule}). Run \`claude-shift uninstall\` to clean scheduler.`);
   } else {
-    display.success(`Trigger ${id} removed.`);
+    display.success(`Trigger ${id} removed (${schedule}).`);
   }
 }

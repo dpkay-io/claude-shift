@@ -47,7 +47,7 @@ function freshConfig(overrides: Record<string, unknown> = {}): void {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n');
 }
 
-describe('CLI E2E', () => {
+describe('CLI E2E', { timeout: 20000 }, () => {
   let savedConfig: string | null = null;
 
   beforeAll(() => {

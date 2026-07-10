@@ -14,6 +14,7 @@ import { pingCommand } from './commands/ping.js';
 import { todayCommand } from './commands/today.js';
 import { weekCommand } from './commands/week.js';
 import { configGetCommand, configSetCommand } from './commands/config.js';
+import { enableCommand, disableCommand } from './commands/toggle.js';
 
 const pkg = createRequire(import.meta.url)('../package.json') as { version: string };
 const program = new Command();
@@ -31,7 +32,7 @@ program
 program
   .command('add <time>')
   .description('Add a manual ping trigger (time in HH:mm format)')
-  .option('-d, --days <days>', 'Days to run (e.g., weekdays, mon-fri, mon,wed,fri)', 'weekdays')
+  .option('-d, --days <days>', 'Days to run (e.g., weekdays, mon-fri, mon,wed,fri) — default: weekdays')
   .option('--once [date]', 'One-time trigger (default: today, or specify YYYY-MM-DD)')
   .action(addCommand);
 
@@ -86,7 +87,7 @@ program
 
 const configCmd = program
   .command('config')
-  .description('View or modify settings (slotDuration, burnRate, claudePath, nodePath, pingPath, pingMessage)');
+  .description('View or modify settings (slotDuration, burnRate, claudePath, nodePath, pingPath, pingMessage, retryEnabled, retryIntervals)');
 
 configCmd
   .command('get [key]')
@@ -98,5 +99,15 @@ configCmd
   .description('Set a configuration value')
   .option('--verify', 'Run a validation ping after setting pingPath')
   .action(configSetCommand);
+
+program
+  .command('enable <id>')
+  .description('Enable a trigger by ID')
+  .action(enableCommand);
+
+program
+  .command('disable <id>')
+  .description('Disable a trigger by ID')
+  .action(disableCommand);
 
 program.parse();

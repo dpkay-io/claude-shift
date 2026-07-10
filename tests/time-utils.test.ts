@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseTime, formatTime, formatTime12h,
   previousDay, nextDay, parseDays, formatDays, sortDays,
+  parseDate, parseSlots,
 } from '../src/core/time-utils.js';
 
 describe('parseTime', () => {
@@ -124,5 +125,47 @@ describe('formatDays', () => {
 describe('sortDays', () => {
   it('sorts in week order', () => {
     expect(sortDays(['fri', 'mon', 'wed'])).toEqual(['mon', 'wed', 'fri']);
+  });
+});
+
+describe('parseDate', () => {
+  it('accepts valid dates', () => {
+    expect(parseDate('2025-01-15')).toBe('2025-01-15');
+    expect(parseDate('2025-12-31')).toBe('2025-12-31');
+    expect(parseDate('2024-02-29')).toBe('2024-02-29'); // leap year
+  });
+
+  it('rejects impossible dates', () => {
+    expect(() => parseDate('2025-02-30')).toThrow('Invalid date');
+    expect(() => parseDate('2025-02-29')).toThrow('Invalid date'); // non-leap
+    expect(() => parseDate('2025-04-31')).toThrow('Invalid date');
+    expect(() => parseDate('2025-13-01')).toThrow('Invalid date');
+    expect(() => parseDate('2025-00-15')).toThrow('Invalid date');
+  });
+
+  it('rejects invalid formats', () => {
+    expect(() => parseDate('2025-1-15')).toThrow('Invalid date format');
+    expect(() => parseDate('not-a-date')).toThrow('Invalid date format');
+    expect(() => parseDate('20250115')).toThrow('Invalid date format');
+  });
+});
+
+describe('parseSlots', () => {
+  it('parses valid slots', () => {
+    expect(parseSlots('09:00-17:00')).toEqual([{ start: '09:00', end: '17:00' }]);
+    expect(parseSlots('09:00-12:00,14:00-17:00')).toEqual([
+      { start: '09:00', end: '12:00' },
+      { start: '14:00', end: '17:00' },
+    ]);
+  });
+
+  it('rejects backwards time ranges with guidance', () => {
+    expect(() => parseSlots('20:00-06:00')).toThrow('end time must be after start time');
+    expect(() => parseSlots('23:00-01:00')).toThrow('split into two');
+    expect(() => parseSlots('12:00-12:00')).toThrow('end time must be after start time');
+  });
+
+  it('rejects invalid slot formats', () => {
+    expect(() => parseSlots('9am-5pm')).toThrow('Invalid slot format');
   });
 });

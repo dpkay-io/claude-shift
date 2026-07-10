@@ -28,6 +28,10 @@ export async function smartCommand(options: { slots: string; days?: string; burn
   }
   const burnRate = isNaN(parsed) ? config.settings.burnRate : parsed;
 
+  if (burnRate >= config.settings.slotDuration) {
+    display.warn(`Burn rate (${burnRate}h) is >= slot duration (${config.settings.slotDuration}h). Pings will fire at window start with no pre-burn buffer.`);
+  }
+
   const pings = calculatePings(windows, days, config.settings.slotDuration, burnRate);
 
   console.log();
@@ -56,19 +60,25 @@ export async function smartCommand(options: { slots: string; days?: string; burn
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const answer = await rl.question('  Apply these triggers? (y/n) ');
     rl.close();
-    if (answer.trim().toLowerCase() !== 'y') {
+    if (!['y', 'yes'].includes(answer.trim().toLowerCase())) {
       console.log(chalk.dim('  Cancelled.'));
       return;
     }
   }
 
-  const removed = clearSmartTriggers(config, days);
-  if (removed.length > 0) {
+  // Remove from scheduler first, then from config — prevents orphaned OS tasks
+  const smartToRemove = config.triggers.filter(t => t.source === 'smart' && t.days.some(d => days.includes(d)));
+  if (smartToRemove.length > 0) {
     const scheduler = createScheduler();
-    for (const t of removed) {
-      try { await scheduler.remove(t.id); } catch {}
+    const failedRemovals: string[] = [];
+    for (const t of smartToRemove) {
+      try { await scheduler.remove(t.id); } catch { failedRemovals.push(t.id); }
     }
-    display.info(`Replaced ${removed.length} previous smart trigger(s) (config + scheduler).`);
+    clearSmartTriggers(config, days);
+    if (failedRemovals.length > 0) {
+      display.warn(`Could not remove ${failedRemovals.length} task(s) from scheduler: ${failedRemovals.join(', ')}. Run \`claude-shift uninstall\` to clean up.`);
+    }
+    display.info(`Replaced ${smartToRemove.length} previous smart trigger(s).`);
   }
 
   const smartConfigs = getSmartConfigs(config).filter(s => !s.days.some(d => days.includes(d)));
@@ -91,5 +101,22 @@ export async function smartCommand(options: { slots: string; days?: string; burn
   saveConfig(config);
 
   display.success(`${pings.length} smart trigger(s) configured.`);
-  display.info('Run `claude-shift install` to activate with your OS scheduler.');
+
+  if (options.yes) {
+    display.info('Run `claude-shift install` to activate with your OS scheduler.');
+    return;
+  }
+  if (!process.stdin.isTTY) {
+    display.info('Run `claude-shift install` to activate with your OS scheduler.');
+    return;
+  }
+  const rl2 = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const installAnswer = await rl2.question('  Install to OS scheduler now? (y/n) ');
+  rl2.close();
+  if (['y', 'yes'].includes(installAnswer.trim().toLowerCase())) {
+    const { installCommand } = await import('./install.js');
+    await installCommand();
+  } else {
+    display.info('Run `claude-shift install` when ready.');
+  }
 }

@@ -513,6 +513,17 @@ async function main() {
   try {
     const pty = await import('@lydell/node-pty');
     const config = loadConfig();
+
+    // ponytail: skip disabled/removed triggers — prevents yearly repeat on cron/launchd
+    if (config && Array.isArray(config.triggers)) {
+      const trigger = config.triggers.find(t => t.id === triggerId);
+      if (trigger && !trigger.enabled) {
+        log(`SKIP trigger=${triggerId} disabled`);
+        releaseLock();
+        process.exit(0);
+        return;
+      }
+    }
     const claudePath = loadClaudePath(config);
     const message = loadPingMessage(config);
     const pingCwd = loadPingPath(config);

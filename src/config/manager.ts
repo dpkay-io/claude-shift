@@ -7,6 +7,14 @@ function ensureDir(): void {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
 }
 
+function currentDateString(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function validateConfig(raw: unknown): Config {
   if (raw === null || typeof raw !== 'object') throw new Error('not an object');
   const obj = raw as Record<string, unknown>;
@@ -16,7 +24,17 @@ function validateConfig(raw: unknown): Config {
 
   const version = obj.version === 1 ? 1 : defaults.version;
   const nextId = typeof obj.nextId === 'number' && obj.nextId >= 1 ? obj.nextId : defaults.nextId;
-  const triggers = Array.isArray(obj.triggers) ? obj.triggers.filter(isValidTrigger) : [];
+  const rawTriggers = Array.isArray(obj.triggers) ? obj.triggers : [];
+  const validTriggers = rawTriggers.filter(isValidTrigger);
+  const dropped = rawTriggers.length - validTriggers.length;
+  if (dropped > 0) {
+    console.warn(`Warning: ${dropped} invalid trigger(s) removed from config (run "claude-shift list" to verify).`);
+  }
+  const today = currentDateString();
+  const triggers = validTriggers.filter(t => {
+    if (t.date && !t.enabled && t.date < today) return false;
+    return true;
+  });
   const smart = Array.isArray(obj.smart) ? obj.smart.filter(isValidSmartConfig) : undefined;
 
   const rawSettings = typeof obj.settings === 'object' && obj.settings !== null
@@ -120,4 +138,18 @@ export function getConfigDir(): string {
 
 export function getConfigPath(): string {
   return CONFIG_FILE;
+}
+
+export function setTriggerEnabled(config: Config, id: string, enabled: boolean): Trigger | null {
+  const trigger = config.triggers.find(t => t.id === id);
+  if (!trigger) return null;
+  trigger.enabled = enabled;
+  return trigger;
+}
+
+export function findDuplicateTrigger(config: Config, time: string, days: DayOfWeek[]): Trigger | undefined {
+  return config.triggers.find(t =>
+    t.time === time && t.enabled && !t.date &&
+    days.length > 0 && days.every(d => t.days.includes(d)) && t.days.every(d => days.includes(d))
+  );
 }
