@@ -9,10 +9,10 @@ const DIVIDER = '─'.repeat(80);
 
 // Mirrors how Claude Code 2.1.x draws a turn: the spinner is printed on the "●" row and the reply
 // later overwrites it in place via cursor positioning, so the reply never follows the prompt in the stream.
-function turn(message: string, replyRows: string[]): string {
+function turn(message: string, replyRows: string[], marker = '●'): string {
   return [
     `${ESC}[2J${at(1, 1)}${ESC}]0;claude\x07`,
-    `${at(9, 1)}❯ ${message}${EL}\r\n${EL}\r\n● Razzmatazzing…${EL}`,
+    `${at(9, 1)}❯ ${message}${EL}\r\n${EL}\r\n${marker} Razzmatazzing…${EL}`,
     `${at(13, 1)}${DIVIDER}\r\n❯ \r\n${DIVIDER}${at(16, 3)}~  opus-5-5  ctx:6%  5h:5%@23:00`,
     `${at(11, 18)}(Tracking ponytail mode… 0/2 · 0s)`,
     ...replyRows.map((text, i) => `${at(11 + i, 3)}${text}${EL}`),
@@ -25,6 +25,11 @@ function turn(message: string, replyRows: string[]): string {
 describe('extractResponse', () => {
   it('returns only the reply that overwrote the spinner', async () => {
     expect(await extractResponse(turn('ping', ['pong']), 'ping')).toBe('pong');
+  });
+
+  it('strips the macOS "⏺" reply marker', async () => {
+    const raw = turn('ping', ["pong — I'm here."], '⏺');
+    expect(await extractResponse(raw, 'ping')).toBe("pong — I'm here.");
   });
 
   it('joins a multi-line reply', async () => {

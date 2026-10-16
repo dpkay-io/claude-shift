@@ -9,8 +9,9 @@ const MAX_RESPONSE_CHARS = 500;
 const ECHO_MATCH_CHARS = PTY_COLS / 2;
 const PROMPT_MARK = '❯';
 const DIVIDER_RE = /^─{10,}/;
-// Claude Code transcript markers: "●" for assistant text, "⎿" for tool/system output (errors, limits).
-const MARKER_RE = /^[●⎿]\s*/;
+// Claude Code transcript markers: "●" (Windows/Linux) or "⏺" (macOS) for assistant text, "⎿" for
+// tool/system output (errors, limits).
+const MARKER_RE = /^[●⏺⎿]\s*/;
 // Spinner and turn-summary lines, e.g. "● Razzmatazzing…" or "✻ Crunched for 3s · done 6:44 PM".
 const STATUS_RE = /^\S\s+(?:[A-Z][a-z]+…|\w+ for \d+[smh]\b)/;
 
