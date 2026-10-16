@@ -30,6 +30,17 @@ function log(msg) {
 const ANSI_RE = /[\x1B\x9B][[\]()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nq-uy=><~]/g;
 const TRUST_RE = /trust\s*this\s*folder/i;
 
+const KEY_ENTER = '\r';
+const KEY_DOWN_ENTER = '\x1b[B\r';
+
+// The trust dialog highlights its default option with "❯". Recent Claude versions default to
+// "No, exit", so a bare Enter would quit — move to the other option first in that case.
+function trustDialogKeys(cleanOutput) {
+  const marks = [...cleanOutput.matchAll(/❯\s*(?:\d+\.\s*)?(yes|no)\b/gi)];
+  const last = marks[marks.length - 1];
+  return last && last[1].toLowerCase() === 'no' ? KEY_DOWN_ENTER : KEY_ENTER;
+}
+
 function extractResponse(rawOutput, message) {
   let cleaned = rawOutput.replace(ANSI_RE, '');
   const msgIdx = cleaned.indexOf(message);
@@ -607,7 +618,7 @@ async function main() {
         if (readyTimer) { clearTimeout(readyTimer); readyTimer = null; }
         setTimeout(() => {
           if (done) return;
-          proc.write('\r');
+          proc.write(trustDialogKeys(stripAnsi(output)));
           scheduleMessage(5000);
         }, 500);
         return;

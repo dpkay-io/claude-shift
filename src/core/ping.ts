@@ -21,6 +21,17 @@ export interface PingResult {
 
 const TRUST_RE = /trust\s*this\s*folder/i;
 
+const KEY_ENTER = '\r';
+const KEY_DOWN_ENTER = '\x1b[B\r';
+
+// The trust dialog highlights its default option with "❯". Recent Claude versions default to
+// "No, exit", so a bare Enter would quit — move to the other option first in that case.
+export function trustDialogKeys(cleanOutput: string): string {
+  const marks = [...cleanOutput.matchAll(/❯\s*(?:\d+\.\s*)?(yes|no)\b/gi)];
+  const last = marks[marks.length - 1];
+  return last && last[1].toLowerCase() === 'no' ? KEY_DOWN_ENTER : KEY_ENTER;
+}
+
 const MONTH_NAMES: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
 
 export function detectLimitHit(response: string | undefined): LimitHit | null {
@@ -172,7 +183,7 @@ export async function executePing(claudePath: string, message: string, triggerId
           if (readyTimer) { clearTimeout(readyTimer); readyTimer = null; }
           setTimeout(() => {
             if (done) return;
-            proc.write('\r');
+            proc.write(trustDialogKeys(stripAnsi(output)));
             scheduleMessage(5000);
           }, 500);
           return;

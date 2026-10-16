@@ -37,6 +37,7 @@ function parseSetting(key: keyof Settings, value: string): { parsed: unknown } |
     return { parsed: num };
   }
   if (key === 'pingPath') {
+    if (value.trim() === '') return { parsed: '' };
     const resolved = path.resolve(value);
     if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
       return { error: `pingPath must be an existing directory. "${value}" not found.` };
@@ -114,6 +115,8 @@ export async function configSetCommand(key: string, value: string, options?: { v
       display.warn(`Validation ping failed: ${pingResult.error}`);
       display.info('The path was saved, but pings may fail at runtime. Verify claudePath and pingPath are correct.');
     }
+  } else if (key === 'pingPath' && result.parsed === '') {
+    display.info('pingPath cleared — scheduled pings will run from the home directory.');
   } else if (key === 'pingPath') {
     display.info('Run `claude-shift ping` to verify the path works.');
   }

@@ -171,6 +171,15 @@ describe('CLI E2E', { timeout: 20000 }, () => {
       expect(v.stdout).toContain(os.homedir());
     });
 
+    it('set pingPath to empty string clears it', () => {
+      cli('config', 'set', 'pingPath', os.homedir());
+      const r = cli('config', 'set', 'pingPath', '');
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toContain('pingPath cleared');
+      const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+      expect(saved.settings.pingPath).toBe('');
+    });
+
     it('set pingPath rejects non-existent directory', () => {
       const r = cli('config', 'set', 'pingPath', '/no/such/path/here');
       expect(r.stdout).toContain('must be an existing directory');
