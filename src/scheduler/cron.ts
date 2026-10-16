@@ -3,7 +3,6 @@ import type { DayOfWeek } from '../config/schema.js';
 import type { SchedulerBackend, ScheduledTask, InstalledTask, SchedulerCheckResult } from './types.js';
 import { cronTagPrefix } from '../config/namespace.js';
 
-
 const CRON_DAY_MAP: Record<DayOfWeek, number> = {
   sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6,
 };
@@ -18,6 +17,11 @@ function getCurrentCrontab(): string {
   } catch {
     return '';
   }
+}
+
+// Exact match on the trailing tag, so removing "retry-001-1" leaves "retry-001-10" alone.
+function isTaskLine(line: string, id: string): boolean {
+  return line.trimEnd().endsWith(`${cronTagPrefix()}${id}`);
 }
 
 function writeCrontab(content: string): void {
@@ -43,14 +47,14 @@ export class CronScheduler implements SchedulerBackend {
     }
 
     let crontab = getCurrentCrontab();
-    crontab = crontab.split('\n').filter(l => !l.includes(`${cronTagPrefix()}${task.id}`)).join('\n');
+    crontab = crontab.split('\n').filter(l => !isTaskLine(l, task.id)).join('\n');
     crontab = crontab.trimEnd() + '\n' + entry + '\n';
     writeCrontab(crontab);
   }
 
   async remove(id: string): Promise<void> {
     let crontab = getCurrentCrontab();
-    const lines = crontab.split('\n').filter(l => !l.includes(`${cronTagPrefix()}${id}`));
+    const lines = crontab.split('\n').filter(l => !isTaskLine(l, id));
     writeCrontab(lines.join('\n'));
   }
 

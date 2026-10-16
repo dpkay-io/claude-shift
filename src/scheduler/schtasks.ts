@@ -4,7 +4,6 @@ import type { SchedulerBackend, ScheduledTask, InstalledTask, SchedulerCheckResu
 import { toErrorMessage } from '../utils/text.js';
 import { schtasksPrefix } from '../config/namespace.js';
 
-
 const SCHTASKS_DAY_MAP: Record<DayOfWeek, string> = {
   mon: 'MON', tue: 'TUE', wed: 'WED', thu: 'THU', fri: 'FRI', sat: 'SAT', sun: 'SUN',
 };
