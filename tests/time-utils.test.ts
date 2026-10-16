@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseTime, formatTime, formatTime12h,
   previousDay, nextDay, parseDays, formatDays, sortDays,
-  parseDate, parseSlots,
+  parseDate, parseSlots, retryStartMinutes,
 } from '../src/core/time-utils.js';
 
 describe('parseTime', () => {
@@ -167,5 +167,30 @@ describe('parseSlots', () => {
 
   it('rejects invalid slot formats', () => {
     expect(() => parseSlots('9am-5pm')).toThrow('Invalid slot format');
+  });
+});
+
+describe('retryStartMinutes', () => {
+  const at = (hhmm: string) => parseTime(hhmm);
+  const LEAD = 2;
+
+  it('uses scheduled time + interval when the run was on time', () => {
+    expect(retryStartMinutes(at('09:00'), 5, at('09:01'), LEAD)).toBe(at('09:05'));
+  });
+
+  it('never schedules in the past when the run was late (e.g. after sleep)', () => {
+    expect(retryStartMinutes(at('09:00'), 5, at('20:13'), LEAD)).toBe(at('20:15'));
+  });
+
+  it('keeps a later interval that is still in the future', () => {
+    expect(retryStartMinutes(at('09:00'), 60, at('09:30'), LEAD)).toBe(at('10:00'));
+  });
+
+  it('treats a scheduled time later than now as yesterday (run delayed past midnight)', () => {
+    expect(retryStartMinutes(at('23:50'), 15, at('00:10'), LEAD)).toBe(at('00:12'));
+  });
+
+  it('can land past midnight so callers can skip it', () => {
+    expect(retryStartMinutes(at('23:50'), 15, at('23:51'), LEAD)).toBeGreaterThanOrEqual(24 * 60);
   });
 });

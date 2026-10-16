@@ -4,9 +4,10 @@ import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import type { DayOfWeek } from '../config/schema.js';
 import type { SchedulerBackend, ScheduledTask, InstalledTask, SchedulerCheckResult } from './types.js';
+import { configDir, launchdLabelPrefix } from '../config/namespace.js';
 
 const PLIST_DIR = path.join(os.homedir(), 'Library', 'LaunchAgents');
-const LABEL_PREFIX = 'com.claude-shift.';
+const LABEL_PREFIX = launchdLabelPrefix();
 
 const LAUNCHD_DAY_MAP: Record<DayOfWeek, number> = {
   sun: 1, mon: 2, tue: 3, wed: 4, thu: 5, fri: 6, sat: 7,
@@ -80,9 +81,9 @@ ${args}
 ${calendarEntries}
   </array>
   <key>StandardOutPath</key>
-  <string>${escapeXml(path.join(os.homedir(), '.claude-shift', 'launchd-stdout.log'))}</string>
+  <string>${escapeXml(path.join(configDir(), 'launchd-stdout.log'))}</string>
   <key>StandardErrorPath</key>
-  <string>${escapeXml(path.join(os.homedir(), '.claude-shift', 'launchd-stderr.log'))}</string>
+  <string>${escapeXml(path.join(configDir(), 'launchd-stderr.log'))}</string>
 </dict>
 </plist>`;
 }

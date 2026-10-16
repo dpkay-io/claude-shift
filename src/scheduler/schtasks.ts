@@ -2,8 +2,9 @@ import { execFileSync } from 'node:child_process';
 import type { DayOfWeek } from '../config/schema.js';
 import type { SchedulerBackend, ScheduledTask, InstalledTask, SchedulerCheckResult } from './types.js';
 import { toErrorMessage } from '../utils/text.js';
+import { schtasksPrefix } from '../config/namespace.js';
 
-const TASK_PREFIX = 'claude-shift-';
+const TASK_PREFIX = schtasksPrefix();
 
 const SCHTASKS_DAY_MAP: Record<DayOfWeek, string> = {
   mon: 'MON', tue: 'TUE', wed: 'WED', thu: 'THU', fri: 'FRI', sat: 'SAT', sun: 'SUN',

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../config/manager.js';
 import { createScheduler } from '../scheduler/factory.js';
+import { namespaceArgs } from '../config/namespace.js';
 import { isClaudeInstalled, findClaude } from '../utils/claude-check.js';
 import { formatTime12h, formatDays, formatDateShort, parseTime } from '../core/time-utils.js';
 import * as display from '../utils/display.js';
@@ -85,7 +86,7 @@ export async function installCommand(): Promise<void> {
   let failed = 0;
 
   for (const trigger of enabled) {
-    const command = `"${nodePath}" "${pingScript}" "${trigger.id}"`;
+    const command = `"${nodePath}" "${pingScript}" "${trigger.id}"${namespaceArgs()}`;
     try {
       await scheduler.install({ id: trigger.id, command, time: trigger.time, days: trigger.days, ...(trigger.date ? { date: trigger.date } : {}) });
       const timeLabel = formatTime12h(parseTime(trigger.time));

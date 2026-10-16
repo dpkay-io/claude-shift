@@ -4,6 +4,7 @@ import { logPing } from '../logger/index.js';
 import { resolveExePath } from '../utils/claude-check.js';
 import { SHELL_META, stripAnsi, toErrorMessage } from '../utils/text.js';
 import { extractResponse, PTY_COLS, PTY_ROWS } from './response.js';
+import { ptySpawnTarget } from '../utils/pty-spawn.js';
 
 export type LimitType = 'weekly' | 'monthly' | 'daily' | 'unknown';
 
@@ -103,12 +104,8 @@ export async function executePing(claudePath: string, message: string, triggerId
     return new Promise<PingResult>((resolve) => {
       let done = false;
 
-      const isWinScript = process.platform === 'win32' &&
-        /\.(cmd|bat)$/i.test(resolved);
-      const spawnFile = isWinScript ? 'cmd.exe' : resolved;
-      const spawnArgs = isWinScript ? ['/c', resolved] : [];
-
-      const proc = pty.spawn(spawnFile, spawnArgs, {
+      const target = ptySpawnTarget(resolved);
+      const proc = pty.spawn(target.file, target.args, {
         name: 'xterm-256color',
         cols: PTY_COLS,
         rows: PTY_ROWS,

@@ -1,8 +1,9 @@
 import { execSync } from 'node:child_process';
 import type { DayOfWeek } from '../config/schema.js';
 import type { SchedulerBackend, ScheduledTask, InstalledTask, SchedulerCheckResult } from './types.js';
+import { cronTagPrefix } from '../config/namespace.js';
 
-const TAG_PREFIX = '# claude-shift:';
+const TAG_PREFIX = cronTagPrefix();
 
 const CRON_DAY_MAP: Record<DayOfWeek, number> = {
   sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6,

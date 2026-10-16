@@ -1,8 +1,8 @@
-import os from 'node:os';
 import path from 'node:path';
 import type { Config, Settings } from './schema.js';
+import { configDir } from './namespace.js';
 
-export const CONFIG_DIR = path.join(os.homedir(), '.claude-shift');
+export const CONFIG_DIR = configDir();
 export const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 export const LOG_FILE = path.join(CONFIG_DIR, 'ping.log');
 

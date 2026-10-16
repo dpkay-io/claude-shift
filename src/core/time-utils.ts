@@ -18,6 +18,20 @@ export function parseTime(time: string): number {
   return hours * 60 + minutes;
 }
 
+const MINUTES_PER_DAY = 24 * 60;
+
+/**
+ * When to schedule a retry, in minutes after today's midnight: `offsetMinutes` after the scheduled
+ * time, but never earlier than `minLeadMinutes` from now. A run delayed by sleep (or started by hand)
+ * would otherwise schedule a one-off task in the past, which never fires (launchd: not until next year).
+ * A scheduled time later than now means the run was delayed past midnight, so it belongs to yesterday.
+ * The result can be >= 1440 (tomorrow); callers decide whether to skip that.
+ */
+export function retryStartMinutes(scheduledMinutes: number, offsetMinutes: number, nowMinutes: number, minLeadMinutes: number): number {
+  const scheduled = scheduledMinutes > nowMinutes ? scheduledMinutes - MINUTES_PER_DAY : scheduledMinutes;
+  return Math.max(scheduled + offsetMinutes, nowMinutes + minLeadMinutes);
+}
+
 export function formatTime(minutes: number): string {
   const normalized = ((minutes % 1440) + 1440) % 1440;
   const h = Math.floor(normalized / 60);

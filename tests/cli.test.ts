@@ -6,7 +6,10 @@ import os from 'node:os';
 
 const NODE = process.execPath;
 const CLI = path.resolve('dist/index.js');
-const CONFIG_DIR = path.join(os.homedir(), '.claude-shift');
+// Runs every command as an isolated instance: its own config dir and OS scheduler entries
+// (claude-shift-e2e-test-*), so the user's real triggers and installed tasks are never touched.
+const NAMESPACE = 'e2e-test';
+const CONFIG_DIR = path.join(os.homedir(), `.claude-shift-${NAMESPACE}`);
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
 function cli(...args: string[]): { stdout: string; exitCode: number } {
@@ -14,7 +17,7 @@ function cli(...args: string[]): { stdout: string; exitCode: number } {
     const stdout = execFileSync(NODE, [CLI, ...args], {
       encoding: 'utf-8',
       timeout: 15000,
-      env: { ...process.env, NO_COLOR: '1' },
+      env: { ...process.env, NO_COLOR: '1', CLAUDE_SHIFT_NAMESPACE: NAMESPACE },
     }) as string;
     return { stdout, exitCode: 0 };
   } catch (err: unknown) {
@@ -48,24 +51,16 @@ function freshConfig(overrides: Record<string, unknown> = {}): void {
 }
 
 describe('CLI E2E', { timeout: 20000 }, () => {
-  let savedConfig: string | null = null;
-
   beforeAll(() => {
     if (!fs.existsSync(CLI)) {
       throw new Error('dist/index.js not found — run `npm run build` before E2E tests.');
     }
-    try {
-      savedConfig = fs.readFileSync(CONFIG_FILE, 'utf-8');
-    } catch {
-      savedConfig = null;
-    }
+    fs.rmSync(CONFIG_DIR, { recursive: true, force: true });
   });
 
   afterAll(() => {
     try { cli('uninstall'); } catch {}
-    if (savedConfig !== null) {
-      fs.writeFileSync(CONFIG_FILE, savedConfig);
-    }
+    fs.rmSync(CONFIG_DIR, { recursive: true, force: true });
   });
 
   // ── version & help ──────────────────────────────────────────────

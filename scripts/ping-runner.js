@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 // Standalone script executed by OS schedulers (cron/launchd/schtasks).
-// Must be self-contained — no imports from the compiled project.
+// Runs outside the CLI, so it only imports small side-effect-free helpers from the compiled
+// project (dist/ always ships next to scripts/ — the `claude-shift` bin itself lives there).
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -10,8 +11,17 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { extractResponse, PTY_COLS, PTY_ROWS } from '../dist/core/response.js';
 import { toSchtasksDate } from '../dist/scheduler/schtasks.js';
+import { retryStartMinutes } from '../dist/core/time-utils.js';
+import { ptySpawnTarget } from '../dist/utils/pty-spawn.js';
+import {
+  NAMESPACE_ENV, NAMESPACE_ARG, configDir, schtasksPrefix, launchdLabelPrefix, cronTagPrefix, namespaceArgs,
+} from '../dist/config/namespace.js';
 
-const CONFIG_DIR = path.join(os.homedir(), '.claude-shift');
+// Scheduled tasks can't carry env vars, so an isolated instance passes its name as an argument.
+const namespaceArgValue = process.argv[process.argv.indexOf(NAMESPACE_ARG) + 1];
+if (process.argv.includes(NAMESPACE_ARG) && namespaceArgValue) process.env[NAMESPACE_ENV] = namespaceArgValue;
+
+const CONFIG_DIR = configDir();
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const LOG_FILE = path.join(CONFIG_DIR, 'ping.log');
 const LOCK_FILE = path.join(CONFIG_DIR, 'ping.lock');
@@ -226,12 +236,12 @@ function escapeXml(s) {
 function scheduleOsTask(taskId, taskTime, command) {
   const date = todayDateStr();
   if (process.platform === 'win32') {
-    const name = `claude-shift-${taskId}`;
+    const name = `${schtasksPrefix()}${taskId}`;
     try { execFileSync('schtasks', ['/delete', '/tn', name, '/f'], { stdio: 'pipe', timeout: 15000 }); } catch {}
     execFileSync('schtasks', ['/create', '/tn', name, '/tr', command, '/sc', 'ONCE', '/sd', toSchtasksDate(date), '/st', taskTime, '/rl', 'LIMITED', '/f'], { stdio: 'pipe', timeout: 15000 });
   } else if (process.platform === 'darwin') {
     const plistDir = path.join(os.homedir(), 'Library', 'LaunchAgents');
-    const label = `com.claude-shift.${taskId}`;
+    const label = `${launchdLabelPrefix()}${taskId}`;
     const plistFile = path.join(plistDir, `${label}.plist`);
     const [hours, minutes] = taskTime.split(':').map(Number);
     const [, month, day] = date.split('-').map(Number);
@@ -265,9 +275,9 @@ ${argsXml}
     </dict>
   </array>
   <key>StandardOutPath</key>
-  <string>${escapeXml(path.join(os.homedir(), '.claude-shift', 'launchd-stdout.log'))}</string>
+  <string>${escapeXml(path.join(CONFIG_DIR, 'launchd-stdout.log'))}</string>
   <key>StandardErrorPath</key>
-  <string>${escapeXml(path.join(os.homedir(), '.claude-shift', 'launchd-stderr.log'))}</string>
+  <string>${escapeXml(path.join(CONFIG_DIR, 'launchd-stderr.log'))}</string>
 </dict>
 </plist>`;
     fs.writeFileSync(plistFile, plist, 'utf-8');
@@ -275,7 +285,7 @@ ${argsXml}
   } else {
     const [hours, minutes] = taskTime.split(':');
     const [, mo, dy] = date.split('-');
-    const tag = `# claude-shift:${taskId}`;
+    const tag = `${cronTagPrefix()}${taskId}`;
     const entry = `${parseInt(minutes)} ${parseInt(hours)} ${parseInt(dy)} ${parseInt(mo)} * ${command} ${tag}`;
     let crontab = '';
     try { crontab = execFileSync('crontab', ['-l'], { encoding: 'utf-8', timeout: 5000 }).toString(); } catch {}
@@ -288,7 +298,7 @@ ${argsXml}
 function scheduleRetryTask(triggerId, retryTime, nextRetryIndex, originalTime, config) {
   const nodePath = config?.settings?.nodePath || process.execPath;
   const scriptPath = fileURLToPath(import.meta.url);
-  const command = `"${nodePath}" "${scriptPath}" "${triggerId}" --retry ${nextRetryIndex} --original-time ${originalTime}`;
+  const command = `"${nodePath}" "${scriptPath}" "${triggerId}" --retry ${nextRetryIndex} --original-time ${originalTime}${namespaceArgs()}`;
   scheduleOsTask(`retry-${triggerId}`, retryTime, command);
 }
 
@@ -394,10 +404,13 @@ function handleLimitRetry(triggerId, limitType, resetTime, isLimitRetry) {
 
   const nodePath = config?.settings?.nodePath || process.execPath;
   const scriptPath = fileURLToPath(import.meta.url);
-  const command = `"${nodePath}" "${scriptPath}" "${triggerId}" --limit-retry`;
+  const command = `"${nodePath}" "${scriptPath}" "${triggerId}" --limit-retry${namespaceArgs()}`;
   scheduleOsTask(`limit-retry-${triggerId}`, retryTime, command);
   log(`RETRY trigger=${triggerId} status=scheduled detail="${limitType} limit — retry at ${retryTime} (resets ${formatLocalTime(resetTime)})"`);
 }
+
+// Schedulers fire on whole minutes; two minutes of lead keeps a retry created at hh:mm:59 in the future.
+const RETRY_MIN_LEAD_MINUTES = 2;
 
 function handleRetry(triggerId, isRetry, retryIndex, originalTime) {
   try {
@@ -430,7 +443,8 @@ function handleRetry(triggerId, isRetry, retryIndex, originalTime) {
       return;
     }
 
-    const retryMinutes = timeToMinutes(originalTime) + intervals[nextIndex];
+    const now = new Date();
+    const retryMinutes = retryStartMinutes(timeToMinutes(originalTime), intervals[nextIndex], now.getHours() * 60 + now.getMinutes(), RETRY_MIN_LEAD_MINUTES);
     if (retryMinutes >= 24 * 60) {
       log(`RETRY trigger=${triggerId} status=skip detail="retry time would cross midnight"`);
       return;
@@ -516,12 +530,8 @@ async function main() {
     }
 
     let done = false;
-    const isWinScript = process.platform === 'win32' &&
-      /\.(cmd|bat)$/i.test(claudePath);
-    const spawnFile = isWinScript ? 'cmd.exe' : claudePath;
-    const spawnArgs = isWinScript ? ['/c', claudePath] : [];
-
-    const proc = pty.spawn(spawnFile, spawnArgs, {
+    const target = ptySpawnTarget(claudePath);
+    const proc = pty.spawn(target.file, target.args, {
       name: 'xterm-256color',
       cols: PTY_COLS,
       rows: PTY_ROWS,
