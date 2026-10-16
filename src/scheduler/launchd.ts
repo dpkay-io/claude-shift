@@ -7,14 +7,13 @@ import type { SchedulerBackend, ScheduledTask, InstalledTask, SchedulerCheckResu
 import { configDir, launchdLabelPrefix } from '../config/namespace.js';
 
 const PLIST_DIR = path.join(os.homedir(), 'Library', 'LaunchAgents');
-const LABEL_PREFIX = launchdLabelPrefix();
 
 const LAUNCHD_DAY_MAP: Record<DayOfWeek, number> = {
   sun: 1, mon: 2, tue: 3, wed: 4, thu: 5, fri: 6, sat: 7,
 };
 
 function plistPath(id: string): string {
-  return path.join(PLIST_DIR, `${LABEL_PREFIX}${id}.plist`);
+  return path.join(PLIST_DIR, `${launchdLabelPrefix()}${id}.plist`);
 }
 
 function parseCommandArgs(cmd: string): string[] {
@@ -36,7 +35,7 @@ function parseCommandArgs(cmd: string): string[] {
 }
 
 function buildPlist(task: ScheduledTask): string {
-  const label = `${LABEL_PREFIX}${task.id}`;
+  const label = `${launchdLabelPrefix()}${task.id}`;
   const timeParts = task.time.split(':');
   if (timeParts.length < 2) throw new Error(`Invalid time format: "${task.time}" (expected HH:mm)`);
   const [hours, minutes] = timeParts.map(Number);
@@ -113,7 +112,7 @@ export class LaunchdScheduler implements SchedulerBackend {
 
   async removeAll(): Promise<void> {
     if (!fs.existsSync(PLIST_DIR)) return;
-    const files = fs.readdirSync(PLIST_DIR).filter(f => f.startsWith(LABEL_PREFIX));
+    const files = fs.readdirSync(PLIST_DIR).filter(f => f.startsWith(launchdLabelPrefix()));
     for (const file of files) {
       const full = path.join(PLIST_DIR, file);
       try { execFileSync('launchctl', ['unload', full], { stdio: 'pipe' }); } catch {}
@@ -123,12 +122,12 @@ export class LaunchdScheduler implements SchedulerBackend {
 
   async list(): Promise<InstalledTask[]> {
     if (!fs.existsSync(PLIST_DIR)) return [];
-    const files = fs.readdirSync(PLIST_DIR).filter(f => f.startsWith(LABEL_PREFIX));
+    const files = fs.readdirSync(PLIST_DIR).filter(f => f.startsWith(launchdLabelPrefix()));
 
     const REVERSE_DAY_MAP: Record<number, string> = { 1: 'sun', 2: 'mon', 3: 'tue', 4: 'wed', 5: 'thu', 6: 'fri', 7: 'sat' };
 
     return files.map(f => {
-      const id = f.replace(LABEL_PREFIX, '').replace('.plist', '');
+      const id = f.replace(launchdLabelPrefix(), '').replace('.plist', '');
       let time = '';
       let days = '';
       try {

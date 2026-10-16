@@ -10,11 +10,11 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { extractResponse, PTY_COLS, PTY_ROWS } from '../dist/core/response.js';
-import { toSchtasksDate } from '../dist/scheduler/schtasks.js';
+import { createScheduler } from '../dist/scheduler/factory.js';
 import { retryStartMinutes } from '../dist/core/time-utils.js';
 import { ptySpawnTarget } from '../dist/utils/pty-spawn.js';
 import {
-  NAMESPACE_ENV, NAMESPACE_ARG, configDir, schtasksPrefix, launchdLabelPrefix, cronTagPrefix, namespaceArgs,
+  NAMESPACE_ENV, NAMESPACE_ARG, configDir, namespaceArgs,
 } from '../dist/config/namespace.js';
 
 // Scheduled tasks can't carry env vars, so an isolated instance passes its name as an argument.
@@ -216,90 +216,44 @@ function findConflictingTrigger(config, triggerId, originalTime, retryTime) {
   return null;
 }
 
-function parseCommandArgs(cmd) {
-  const args = [];
-  let current = '';
-  let inQuote = false;
-  for (const ch of cmd) {
-    if (ch === '"') { inQuote = !inQuote; }
-    else if (ch === ' ' && !inQuote) { if (current) args.push(current); current = ''; }
-    else { current += ch; }
-  }
-  if (current) args.push(current);
-  return args;
+// --- One-off retry tasks, scheduled through the same backends as `claude-shift install` ---
+
+const scheduler = createScheduler();
+
+// One task per attempt: launchd kills a job's process when its own plist is unloaded, so an attempt
+// must never reschedule under its own name (on macOS that stopped every chain after attempt 1).
+const retryTaskId = (triggerId, attempt) => `retry-${triggerId}-${attempt}`;
+const limitRetryTaskId = (triggerId) => `limit-retry-${triggerId}`;
+// Single-name format used before per-attempt tasks; still matched so its leftovers get removed.
+const legacyRetryTaskId = (triggerId) => `retry-${triggerId}`;
+
+function isRetryTaskOf(taskId, triggerId) {
+  const legacy = legacyRetryTaskId(triggerId);
+  return taskId === limitRetryTaskId(triggerId) || taskId === legacy || taskId.startsWith(`${legacy}-`);
 }
 
-function escapeXml(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+async function scheduleOneOff(taskId, taskTime, command) {
+  await scheduler.install({ id: taskId, command, time: taskTime, days: [], date: todayDateStr() });
 }
 
-function scheduleOsTask(taskId, taskTime, command) {
-  const date = todayDateStr();
-  if (process.platform === 'win32') {
-    const name = `${schtasksPrefix()}${taskId}`;
-    try { execFileSync('schtasks', ['/delete', '/tn', name, '/f'], { stdio: 'pipe', timeout: 15000 }); } catch {}
-    execFileSync('schtasks', ['/create', '/tn', name, '/tr', command, '/sc', 'ONCE', '/sd', toSchtasksDate(date), '/st', taskTime, '/rl', 'LIMITED', '/f'], { stdio: 'pipe', timeout: 15000 });
-  } else if (process.platform === 'darwin') {
-    const plistDir = path.join(os.homedir(), 'Library', 'LaunchAgents');
-    const label = `${launchdLabelPrefix()}${taskId}`;
-    const plistFile = path.join(plistDir, `${label}.plist`);
-    const [hours, minutes] = taskTime.split(':').map(Number);
-    const [, month, day] = date.split('-').map(Number);
-
-    fs.mkdirSync(plistDir, { recursive: true });
-    try { execFileSync('launchctl', ['unload', plistFile], { stdio: 'pipe' }); } catch {}
-
-    const cmdArgs = parseCommandArgs(command);
-    const argsXml = cmdArgs.map(a => `      <string>${escapeXml(a)}</string>`).join('\n');
-    const plist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>${label}</string>
-  <key>ProgramArguments</key>
-  <array>
-${argsXml}
-  </array>
-  <key>StartCalendarInterval</key>
-  <array>
-    <dict>
-      <key>Month</key>
-      <integer>${month}</integer>
-      <key>Day</key>
-      <integer>${day}</integer>
-      <key>Hour</key>
-      <integer>${hours}</integer>
-      <key>Minute</key>
-      <integer>${minutes}</integer>
-    </dict>
-  </array>
-  <key>StandardOutPath</key>
-  <string>${escapeXml(path.join(CONFIG_DIR, 'launchd-stdout.log'))}</string>
-  <key>StandardErrorPath</key>
-  <string>${escapeXml(path.join(CONFIG_DIR, 'launchd-stderr.log'))}</string>
-</dict>
-</plist>`;
-    fs.writeFileSync(plistFile, plist, 'utf-8');
-    execFileSync('launchctl', ['load', plistFile], { stdio: 'pipe' });
-  } else {
-    const [hours, minutes] = taskTime.split(':');
-    const [, mo, dy] = date.split('-');
-    const tag = `${cronTagPrefix()}${taskId}`;
-    const entry = `${parseInt(minutes)} ${parseInt(hours)} ${parseInt(dy)} ${parseInt(mo)} * ${command} ${tag}`;
-    let crontab = '';
-    try { crontab = execFileSync('crontab', ['-l'], { encoding: 'utf-8', timeout: 5000 }).toString(); } catch {}
-    crontab = crontab.split('\n').filter(l => !l.includes(tag)).join('\n');
-    crontab = crontab.trimEnd() + '\n' + entry + '\n';
-    execFileSync('crontab', ['-'], { input: crontab, encoding: 'utf-8', timeout: 5000 });
+// One-off tasks pin a calendar date, so a leftover launchd/cron entry fires again next year. Every run
+// removes this trigger's finished ones, except its own (see retryTaskId); the next run removes that.
+async function removeFinishedRetryTasks(triggerId, ownTaskId) {
+  try {
+    for (const task of await scheduler.list()) {
+      if (task.id !== ownTaskId && isRetryTaskOf(task.id, triggerId)) await scheduler.remove(task.id);
+    }
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    log(`CLEANUP trigger=${triggerId} status=error detail="${sanitizeLog(errMsg)}"`);
   }
 }
 
-function scheduleRetryTask(triggerId, retryTime, nextRetryIndex, originalTime, config) {
+async function scheduleRetryTask(triggerId, retryTime, nextRetryIndex, originalTime, config) {
   const nodePath = config?.settings?.nodePath || process.execPath;
   const scriptPath = fileURLToPath(import.meta.url);
   const command = `"${nodePath}" "${scriptPath}" "${triggerId}" --retry ${nextRetryIndex} --original-time ${originalTime}${namespaceArgs()}`;
-  scheduleOsTask(`retry-${triggerId}`, retryTime, command);
+  await scheduleOneOff(retryTaskId(triggerId, nextRetryIndex), retryTime, command);
 }
 
 // --- Limit detection ---
@@ -350,7 +304,7 @@ function formatDateStr(date) {
 
 const LIMIT_RETRY_BUFFER_MINUTES = 3;
 
-function handleLimitRetry(triggerId, limitType, resetTime, isLimitRetry) {
+async function handleLimitRetry(triggerId, limitType, resetTime, isLimitRetry) {
   if (isLimitRetry) {
     log(`RETRY trigger=${triggerId} status=exhausted detail="limit-retry failed again (${limitType})"`);
     return;
@@ -405,14 +359,20 @@ function handleLimitRetry(triggerId, limitType, resetTime, isLimitRetry) {
   const nodePath = config?.settings?.nodePath || process.execPath;
   const scriptPath = fileURLToPath(import.meta.url);
   const command = `"${nodePath}" "${scriptPath}" "${triggerId}" --limit-retry${namespaceArgs()}`;
-  scheduleOsTask(`limit-retry-${triggerId}`, retryTime, command);
+  try {
+    await scheduleOneOff(limitRetryTaskId(triggerId), retryTime, command);
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    log(`RETRY trigger=${triggerId} status=error detail="failed to schedule limit retry: ${sanitizeLog(errMsg)}"`);
+    return;
+  }
   log(`RETRY trigger=${triggerId} status=scheduled detail="${limitType} limit — retry at ${retryTime} (resets ${formatLocalTime(resetTime)})"`);
 }
 
 // Schedulers fire on whole minutes; two minutes of lead keeps a retry created at hh:mm:59 in the future.
 const RETRY_MIN_LEAD_MINUTES = 2;
 
-function handleRetry(triggerId, isRetry, retryIndex, originalTime) {
+async function handleRetry(triggerId, isRetry, retryIndex, originalTime) {
   try {
     const config = loadConfig();
 
@@ -457,7 +417,7 @@ function handleRetry(triggerId, isRetry, retryIndex, originalTime) {
       return;
     }
 
-    scheduleRetryTask(triggerId, retryTime, nextIndex, originalTime, config);
+    await scheduleRetryTask(triggerId, retryTime, nextIndex, originalTime, config);
     log(`RETRY trigger=${triggerId} status=scheduled detail="attempt ${nextIndex + 1}/${intervals.length} at ${retryTime} (original=${originalTime})"`);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
@@ -502,6 +462,9 @@ async function main() {
   const retryLabel = isRetry ? ` retry=${retryIndex + 1}` : isLimitRetry ? ' limit-retry' : '';
   log(`PING trigger=${triggerId}${retryLabel} status=starting`);
   const start = Date.now();
+
+  const ownTaskId = isRetry ? retryTaskId(triggerId, retryIndex) : isLimitRetry ? limitRetryTaskId(triggerId) : null;
+  await removeFinishedRetryTasks(triggerId, ownTaskId);
 
   try {
     const pty = await import('@lydell/node-pty');
@@ -564,7 +527,7 @@ async function main() {
         const resetTime = limit.retryable ? parseResetTime(resp) : null;
         const resetDetail = resetTime ? ` resets=${formatLocalTime(resetTime)}` : '';
         log(`PING trigger=${triggerId}${retryLabel} status=limit-${limit.type} detail="timeout after ${duration}ms${resetDetail}"${respPart}`);
-        handleLimitRetry(triggerId, limit.type, resetTime, isLimitRetry);
+        await handleLimitRetry(triggerId, limit.type, resetTime, isLimitRetry);
         releaseLock();
         process.exit(1);
         return;
@@ -624,7 +587,7 @@ async function main() {
           const resetTime = limit.retryable ? parseResetTime(resp) : null;
           const resetDetail = resetTime ? ` resets=${formatLocalTime(resetTime)}` : '';
           log(`PING trigger=${triggerId}${retryLabel} status=limit-${limit.type} detail="exit=${exitCode} duration=${duration}ms${resetDetail}"${respPart}`);
-          handleLimitRetry(triggerId, limit.type, resetTime, isLimitRetry);
+          await handleLimitRetry(triggerId, limit.type, resetTime, isLimitRetry);
           releaseLock();
           process.exit(1);
           return;
@@ -633,7 +596,7 @@ async function main() {
         disableOnceTrigger(triggerId);
       } else {
         log(`PING trigger=${triggerId}${retryLabel} status=error detail="exit=${exitCode} duration=${duration}ms"${respPart}`);
-        handleRetry(triggerId, isRetry, retryIndex, originalTime);
+        await handleRetry(triggerId, isRetry, retryIndex, originalTime);
       }
       releaseLock();
       process.exit(ok ? 0 : 1);
@@ -642,7 +605,7 @@ async function main() {
     const duration = Date.now() - start;
     const errMsg = err instanceof Error ? err.message : String(err);
     log(`PING trigger=${triggerId}${retryLabel} status=error detail="${sanitizeLog(errMsg)}" duration=${duration}ms`);
-    handleRetry(triggerId, isRetry, retryIndex, originalTime);
+    await handleRetry(triggerId, isRetry, retryIndex, originalTime);
     releaseLock();
     process.exit(1);
   }

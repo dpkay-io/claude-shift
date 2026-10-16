@@ -4,14 +4,13 @@ import type { SchedulerBackend, ScheduledTask, InstalledTask, SchedulerCheckResu
 import { toErrorMessage } from '../utils/text.js';
 import { schtasksPrefix } from '../config/namespace.js';
 
-const TASK_PREFIX = schtasksPrefix();
 
 const SCHTASKS_DAY_MAP: Record<DayOfWeek, string> = {
   mon: 'MON', tue: 'TUE', wed: 'WED', thu: 'THU', fri: 'FRI', sat: 'SAT', sun: 'SUN',
 };
 
 function taskName(id: string): string {
-  return `${TASK_PREFIX}${id}`;
+  return `${schtasksPrefix()}${id}`;
 }
 
 function schtasks(...args: string[]): string {
@@ -81,8 +80,8 @@ export class SchtasksScheduler implements SchedulerBackend {
         const cols = trimmed.split('","').map(s => s.replace(/"/g, ''));
         if (cols.length < 1 || !cols[0]) continue;
         const name = cols[0].replace(/^\\+/, '');
-        if (!name.startsWith(TASK_PREFIX)) continue;
-        const id = name.slice(TASK_PREFIX.length);
+        if (!name.startsWith(schtasksPrefix())) continue;
+        const id = name.slice(schtasksPrefix().length);
         await this.remove(id);
       }
     } catch {
@@ -101,9 +100,9 @@ export class SchtasksScheduler implements SchedulerBackend {
         const cols = trimmed.split('","').map(s => s.replace(/"/g, ''));
         if (cols.length < 3 || !cols[0]) continue;
         const name = cols[0].replace(/^\\+/, '');
-        if (!name.startsWith(TASK_PREFIX)) continue;
+        if (!name.startsWith(schtasksPrefix())) continue;
 
-        const id = name.slice(TASK_PREFIX.length);
+        const id = name.slice(schtasksPrefix().length);
         const statusText = (cols[2] ?? '').toLowerCase();
         const isDisabled = statusText.includes('disabled') || statusText.includes('disable');
         const status = isDisabled ? 'inactive' as const : 'active' as const;

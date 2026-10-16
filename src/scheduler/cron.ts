@@ -3,7 +3,6 @@ import type { DayOfWeek } from '../config/schema.js';
 import type { SchedulerBackend, ScheduledTask, InstalledTask, SchedulerCheckResult } from './types.js';
 import { cronTagPrefix } from '../config/namespace.js';
 
-const TAG_PREFIX = cronTagPrefix();
 
 const CRON_DAY_MAP: Record<DayOfWeek, number> = {
   sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6,
@@ -37,27 +36,27 @@ export class CronScheduler implements SchedulerBackend {
     let entry: string;
     if (task.date) {
       const [, m, d] = task.date.split('-');
-      entry = `${parseInt(minutes!, 10)} ${parseInt(hours!, 10)} ${parseInt(d!, 10)} ${parseInt(m!, 10)} * ${task.command} ${TAG_PREFIX}${task.id}`;
+      entry = `${parseInt(minutes!, 10)} ${parseInt(hours!, 10)} ${parseInt(d!, 10)} ${parseInt(m!, 10)} * ${task.command} ${cronTagPrefix()}${task.id}`;
     } else {
       const cronDays = toCronDays(task.days);
-      entry = `${parseInt(minutes!, 10)} ${parseInt(hours!, 10)} * * ${cronDays} ${task.command} ${TAG_PREFIX}${task.id}`;
+      entry = `${parseInt(minutes!, 10)} ${parseInt(hours!, 10)} * * ${cronDays} ${task.command} ${cronTagPrefix()}${task.id}`;
     }
 
     let crontab = getCurrentCrontab();
-    crontab = crontab.split('\n').filter(l => !l.includes(`${TAG_PREFIX}${task.id}`)).join('\n');
+    crontab = crontab.split('\n').filter(l => !l.includes(`${cronTagPrefix()}${task.id}`)).join('\n');
     crontab = crontab.trimEnd() + '\n' + entry + '\n';
     writeCrontab(crontab);
   }
 
   async remove(id: string): Promise<void> {
     let crontab = getCurrentCrontab();
-    const lines = crontab.split('\n').filter(l => !l.includes(`${TAG_PREFIX}${id}`));
+    const lines = crontab.split('\n').filter(l => !l.includes(`${cronTagPrefix()}${id}`));
     writeCrontab(lines.join('\n'));
   }
 
   async removeAll(): Promise<void> {
     let crontab = getCurrentCrontab();
-    const lines = crontab.split('\n').filter(l => !l.includes(TAG_PREFIX));
+    const lines = crontab.split('\n').filter(l => !l.includes(cronTagPrefix()));
     writeCrontab(lines.join('\n'));
   }
 
@@ -66,10 +65,10 @@ export class CronScheduler implements SchedulerBackend {
     const results: InstalledTask[] = [];
 
     for (const line of crontab.split('\n')) {
-      const tagIdx = line.indexOf(TAG_PREFIX);
+      const tagIdx = line.indexOf(cronTagPrefix());
       if (tagIdx === -1) continue;
 
-      const id = line.slice(tagIdx + TAG_PREFIX.length).trim();
+      const id = line.slice(tagIdx + cronTagPrefix().length).trim();
       const parts = line.trim().split(/\s+/);
       const time = `${parts[1]?.padStart(2, '0') ?? '00'}:${parts[0]?.padStart(2, '0') ?? '00'}`;
       const days = parts[4] ?? '';
