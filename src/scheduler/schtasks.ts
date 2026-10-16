@@ -17,6 +17,39 @@ function schtasks(...args: string[]): string {
   return execFileSync('schtasks', args, { encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] });
 }
 
+export type DateOrder = 'MDY' | 'DMY' | 'YMD';
+const DEFAULT_DATE_ORDER: DateOrder = 'MDY';
+const DATE_ORDERS: readonly string[] = ['MDY', 'DMY', 'YMD'];
+const INTERNATIONAL_KEY = 'HKCU\\Control Panel\\International';
+
+/** Day/month/year order of a Windows short-date pattern such as "dd-MM-yyyy" or "M/d/yyyy". */
+export function dateOrderFromPattern(pattern: string): DateOrder | null {
+  const order = [...new Set((pattern.match(/d+|M+|y+/g) ?? []).map((t) => t[0].toUpperCase()))].join('');
+  return DATE_ORDERS.includes(order) ? order as DateOrder : null;
+}
+
+let cachedDateOrder: DateOrder | undefined;
+
+// schtasks /sd only accepts the user's regional day/month order (always "/"-separated), so a
+// hardcoded mm/dd/yyyy fails with "Incorrect Start Date" on dd/mm locales.
+function regionalDateOrder(): DateOrder {
+  if (cachedDateOrder) return cachedDateOrder;
+  try {
+    const out = execFileSync('reg', ['query', INTERNATIONAL_KEY, '/v', 'sShortDate'], { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
+    cachedDateOrder = dateOrderFromPattern(out.match(/sShortDate\s+REG_SZ\s+(.+)/)?.[1]?.trim() ?? '') ?? DEFAULT_DATE_ORDER;
+  } catch {
+    cachedDateOrder = DEFAULT_DATE_ORDER;
+  }
+  return cachedDateOrder;
+}
+
+/** Formats a YYYY-MM-DD date for `schtasks /sd`. */
+export function toSchtasksDate(isoDate: string, order: DateOrder = regionalDateOrder()): string {
+  const [y, m, d] = isoDate.split('-');
+  const parts: Record<string, string> = { Y: y, M: m, D: d };
+  return [...order].map((k) => parts[k]).join('/');
+}
+
 export class SchtasksScheduler implements SchedulerBackend {
   readonly name = 'schtasks';
 
@@ -26,9 +59,7 @@ export class SchtasksScheduler implements SchedulerBackend {
     try { schtasks('/delete', '/tn', name, '/f'); } catch {}
 
     if (task.date) {
-      const [y, m, d] = task.date.split('-');
-      const sd = `${m}/${d}/${y}`;
-      schtasks('/create', '/tn', name, '/tr', task.command, '/sc', 'ONCE', '/sd', sd, '/st', task.time, '/rl', 'LIMITED', '/f');
+      schtasks('/create', '/tn', name, '/tr', task.command, '/sc', 'ONCE', '/sd', toSchtasksDate(task.date), '/st', task.time, '/rl', 'LIMITED', '/f');
     } else {
       const days = task.days.map(d => SCHTASKS_DAY_MAP[d]).join(',');
       schtasks('/create', '/tn', name, '/tr', task.command, '/sc', 'WEEKLY', '/d', days, '/st', task.time, '/rl', 'LIMITED', '/f');

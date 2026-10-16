@@ -8,6 +8,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { extractResponse, PTY_COLS, PTY_ROWS } from '../dist/core/response.js';
+import { toSchtasksDate } from '../dist/scheduler/schtasks.js';
 
 const CONFIG_DIR = path.join(os.homedir(), '.claude-shift');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
@@ -39,38 +41,6 @@ function trustDialogKeys(cleanOutput) {
   const marks = [...cleanOutput.matchAll(/❯\s*(?:\d+\.\s*)?(yes|no)\b/gi)];
   const last = marks[marks.length - 1];
   return last && last[1].toLowerCase() === 'no' ? KEY_DOWN_ENTER : KEY_ENTER;
-}
-
-function extractResponse(rawOutput, message) {
-  let cleaned = rawOutput.replace(ANSI_RE, '');
-  const msgIdx = cleaned.indexOf(message);
-  if (msgIdx !== -1) cleaned = cleaned.slice(msgIdx + message.length);
-  cleaned = cleaned
-    .replace(/─+/g, '')
-    .replace(/Resume this session with:.*$/gm, '')
-    .replace(/claude\s+--resume\s+[\w-]+/g, '')
-    .replace(/\d+\s*claude\.ai\s*connector.*?\/mcp/gi, '')
-    .replace(/ctx:\d+%[^·]*?·\/effort/g, '')
-    .replace(/\d+h:\d+%@[\w:.]+/g, '')
-    .replace(/\d+d:\d+%@[\w:.]+/g, '')
-    .replace(/[⠂⠐⠈⠑⠃]?\s*Claude Code\x07?/g, '')
-    .replace(/[✻✳;]?\s*\w+(?:ed|ing)\s+for\s+\d+s/g, '')
-    .replace(/\(\d+s\s*·\s*↓\s*\d+\s*tokens?\)/g, '')
-    .replace(/(?:bypass\s*permissions?\s*on|shift\+tab\s*to\s*cycle)/gi, '')
-    .replace(/[⏵●❯✻✳;]\s*/g, '')
-    .replace(/~[\\/][\w\\/.-]+/g, '')
-    .replace(/opus-\d+-\d+/g, '')
-    .replace(/·\/effort/g, '')
-    .replace(/\bhigh\b|\blow\b|\bmedium\b|\bmain\b/g, '')
-    .replace(/\bX{1,2}\b/g, '')
-    .replace(/\w+…/g, '')
-    .replace(/u\d[u;][\d;a-z]*/gi, '')
-    .replace(/\x07/g, '')
-    .replace(/\/exit/g, '')
-    .replace(/\(\s*\)/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return cleaned.slice(0, 500);
 }
 
 function acquireLock() {
@@ -256,11 +226,9 @@ function escapeXml(s) {
 function scheduleOsTask(taskId, taskTime, command) {
   const date = todayDateStr();
   if (process.platform === 'win32') {
-    const [y, m, d] = date.split('-');
-    const sd = `${m}/${d}/${y}`;
     const name = `claude-shift-${taskId}`;
     try { execFileSync('schtasks', ['/delete', '/tn', name, '/f'], { stdio: 'pipe', timeout: 15000 }); } catch {}
-    execFileSync('schtasks', ['/create', '/tn', name, '/tr', command, '/sc', 'ONCE', '/sd', sd, '/st', taskTime, '/rl', 'LIMITED', '/f'], { stdio: 'pipe', timeout: 15000 });
+    execFileSync('schtasks', ['/create', '/tn', name, '/tr', command, '/sc', 'ONCE', '/sd', toSchtasksDate(date), '/st', taskTime, '/rl', 'LIMITED', '/f'], { stdio: 'pipe', timeout: 15000 });
   } else if (process.platform === 'darwin') {
     const plistDir = path.join(os.homedir(), 'Library', 'LaunchAgents');
     const label = `com.claude-shift.${taskId}`;
@@ -555,13 +523,12 @@ async function main() {
 
     const proc = pty.spawn(spawnFile, spawnArgs, {
       name: 'xterm-256color',
-      cols: 80,
-      rows: 24,
+      cols: PTY_COLS,
+      rows: PTY_ROWS,
       cwd: pingCwd,
     });
 
     let output = '';
-    let responseOutput = '';
     let sentMessage = false;
     let trustSeen = false;
     let readyTimer = null;
@@ -570,12 +537,17 @@ async function main() {
       return s.replace(ANSI_RE, '');
     }
 
-    const timeout = setTimeout(() => {
+    const responseText = async () => {
+      if (!sentMessage) return '';
+      try { return await extractResponse(output, message); } catch { return ''; }
+    };
+
+    const timeout = setTimeout(async () => {
       if (done) return;
       done = true;
       try { proc.kill(); } catch {}
       const duration = Date.now() - start;
-      const resp = responseOutput ? extractResponse(responseOutput, message) : '';
+      const resp = await responseText();
       const respPart = resp ? ` response="${sanitizeLog(resp)}"` : '';
       const limit = detectLimitHit(resp);
       if (limit) {
@@ -598,7 +570,6 @@ async function main() {
       readyTimer = setTimeout(() => {
         if (done || sentMessage) return;
         sentMessage = true;
-        responseOutput = '';
         proc.write(message + '\r');
         setTimeout(() => {
           if (done) return;
@@ -610,7 +581,6 @@ async function main() {
     proc.onData((data) => {
       if (output.length > 1_000_000) return;
       output += data;
-      if (sentMessage) responseOutput += data;
       const clean = stripAnsi(output);
 
       if (!trustSeen && TRUST_RE.test(clean)) {
@@ -629,13 +599,13 @@ async function main() {
       }
     });
 
-    proc.onExit(({ exitCode }) => {
+    proc.onExit(async ({ exitCode }) => {
       if (done) return;
       done = true;
       clearTimeout(timeout);
       const duration = Date.now() - start;
       const ok = exitCode === 0 || exitCode === null;
-      const resp = responseOutput ? extractResponse(responseOutput, message) : '';
+      const resp = await responseText();
       const respPart = resp ? ` response="${sanitizeLog(resp)}"` : '';
 
       if (ok) {

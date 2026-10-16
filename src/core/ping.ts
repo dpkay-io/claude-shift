@@ -1,7 +1,9 @@
+import os from 'node:os';
 import path from 'node:path';
 import { logPing } from '../logger/index.js';
 import { resolveExePath } from '../utils/claude-check.js';
-import { SHELL_META, ANSI_RE, stripAnsi, toErrorMessage } from '../utils/text.js';
+import { SHELL_META, stripAnsi, toErrorMessage } from '../utils/text.js';
+import { extractResponse, PTY_COLS, PTY_ROWS } from './response.js';
 
 export type LimitType = 'weekly' | 'monthly' | 'daily' | 'unknown';
 
@@ -71,36 +73,18 @@ export function parseResetTime(response: string | undefined): Date | null {
   return resetDate;
 }
 
-function extractResponse(rawOutput: string, message: string): string {
-  let cleaned = rawOutput.replace(ANSI_RE, '');
-  const msgIdx = cleaned.indexOf(message);
-  if (msgIdx !== -1) cleaned = cleaned.slice(msgIdx + message.length);
-  cleaned = cleaned
-    .replace(/─+/g, '')
-    .replace(/Resume this session with:.*$/gm, '')
-    .replace(/claude\s+--resume\s+[\w-]+/g, '')
-    .replace(/\d+\s*claude\.ai\s*connector.*?\/mcp/gi, '')
-    .replace(/ctx:\d+%[^·]*?·\/effort/g, '')
-    .replace(/\d+h:\d+%@[\w:.]+/g, '')
-    .replace(/\d+d:\d+%@[\w:.]+/g, '')
-    .replace(/[⠂⠐⠈⠑⠃]?\s*Claude Code\x07?/g, '')
-    .replace(/[✻✳;]?\s*\w+(?:ed|ing)\s+for\s+\d+s/g, '')
-    .replace(/\(\d+s\s*·\s*↓\s*\d+\s*tokens?\)/g, '')
-    .replace(/(?:bypass\s*permissions?\s*on|shift\+tab\s*to\s*cycle)/gi, '')
-    .replace(/[⏵●❯✻✳;]\s*/g, '')
-    .replace(/~[\\/][\w\\/.-]+/g, '')
-    .replace(/opus-\d+-\d+/g, '')
-    .replace(/·\/effort/g, '')
-    .replace(/\bhigh\b|\blow\b|\bmedium\b|\bmain\b/g, '')
-    .replace(/\bX{1,2}\b/g, '')
-    .replace(/\w+…/g, '')
-    .replace(/u\d[u;][\d;a-z]*/gi, '')
-    .replace(/\x07/g, '')
-    .replace(/\/exit/g, '')
-    .replace(/\(\s*\)/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return cleaned.slice(0, 500);
+interface PtyHandles {
+  _agent?: { _inSocket?: { destroy(): void }; _conoutSocketWorker?: { dispose(): void } };
+}
+
+// ponytail: node-pty 1.1.0 on Windows leaves the conin socket and conout worker open after the child
+// exits, so the CLI never returns. kill() would fork a console-list helper that crashes once the child
+// is gone, so release those two handles directly. Private fields: a node-pty upgrade that renames them
+// turns this into a no-op — re-check `claude-shift ping` exits when bumping node-pty.
+export function releasePty(proc: unknown): void {
+  const agent = (proc as PtyHandles)._agent;
+  agent?._inSocket?.destroy();
+  agent?._conoutSocketWorker?.dispose();
 }
 
 function validatePath(p: string): void {
@@ -118,12 +102,6 @@ export async function executePing(claudePath: string, message: string, triggerId
 
     return new Promise<PingResult>((resolve) => {
       let done = false;
-      function finish(result: PingResult): void {
-        if (done) return;
-        done = true;
-        clearTimeout(timeout);
-        resolve(result);
-      }
 
       const isWinScript = process.platform === 'win32' &&
         /\.(cmd|bat)$/i.test(resolved);
@@ -132,30 +110,51 @@ export async function executePing(claudePath: string, message: string, triggerId
 
       const proc = pty.spawn(spawnFile, spawnArgs, {
         name: 'xterm-256color',
-        cols: 80,
-        rows: 24,
-        cwd: cwd || process.cwd(),
+        cols: PTY_COLS,
+        rows: PTY_ROWS,
+        // Same fallback as scheduled pings (scripts/ping-runner.js), so a manual ping tests the same folder.
+        cwd: cwd || os.homedir(),
       });
 
       let output = '';
-      let responseOutput = '';
       let sentMessage = false;
       let trustSeen = false;
       let readyTimer: ReturnType<typeof setTimeout> | null = null;
 
+      // Single exit path for both the timeout and the process exit. `done` is claimed synchronously
+      // so the kill() in the timeout path can't make onExit report the same ping twice.
+      async function conclude(exitCode: number | null | undefined, timedOut: boolean): Promise<void> {
+        if (done) return;
+        done = true;
+        clearTimeout(timeout);
+        const duration = Date.now() - start;
+        let resp: string | undefined;
+        try {
+          resp = sentMessage ? (await extractResponse(output, message)) || undefined : undefined;
+        } catch {}
+        const detail = timedOut ? `timeout after ${duration}ms` : `exit=${exitCode} duration=${duration}ms`;
+        const ok = timedOut || exitCode === 0 || exitCode === null;
+
+        if (ok) {
+          const limit = detectLimitHit(resp);
+          if (limit) {
+            const resetTime = limit.retryable ? parseResetTime(resp) : null;
+            logPing(triggerId, `limit-${limit.type}`, detail, resp);
+            resolve({ success: false, duration, error: `${limit.type} limit hit`, response: resp, limitType: limit.type, resetTime: resetTime ?? undefined });
+            return;
+          }
+        }
+
+        logPing(triggerId, ok ? 'success' : 'error', timedOut ? `${detail} — session was started` : detail, resp);
+        resolve({ success: ok, duration, error: ok ? undefined : `process exited with code ${exitCode}`, response: resp });
+      }
+
       const timeout = setTimeout(() => {
         try { proc.kill(); } catch {}
-        const duration = Date.now() - start;
-        const resp = responseOutput ? extractResponse(responseOutput, message) : undefined;
-        const limit = detectLimitHit(resp);
-        if (limit) {
-          const resetTime = limit.retryable ? parseResetTime(resp) : null;
-          logPing(triggerId, `limit-${limit.type}`, `timeout after ${duration}ms`, resp);
-          finish({ success: false, duration, error: `${limit.type} limit hit`, response: resp, limitType: limit.type, resetTime: resetTime ?? undefined });
-          return;
-        }
-        logPing(triggerId, 'success', `timeout after ${duration}ms — session was started`, resp);
-        finish({ success: true, duration, response: resp });
+        // node-pty on Windows defers kill() until the pty's first output, so a child that never
+        // printed anything would outlive it and keep this process open.
+        if (!output) { try { process.kill(proc.pid); } catch {} }
+        void conclude(undefined, true);
       }, 60000);
 
       function scheduleMessage(delayMs: number): void {
@@ -163,7 +162,6 @@ export async function executePing(claudePath: string, message: string, triggerId
         readyTimer = setTimeout(() => {
           if (done || sentMessage) return;
           sentMessage = true;
-          responseOutput = '';
           proc.write(message + '\r');
           setTimeout(() => {
             if (done) return;
@@ -175,7 +173,6 @@ export async function executePing(claudePath: string, message: string, triggerId
       proc.onData((data: string) => {
         if (output.length > 1_000_000) return;
         output += data;
-        if (sentMessage) responseOutput += data;
         const clean = stripAnsi(output);
 
         if (!trustSeen && TRUST_RE.test(clean)) {
@@ -195,22 +192,8 @@ export async function executePing(claudePath: string, message: string, triggerId
       });
 
       proc.onExit(({ exitCode }) => {
-        const duration = Date.now() - start;
-        const ok = exitCode === 0 || exitCode === null;
-        const resp = responseOutput ? extractResponse(responseOutput, message) : undefined;
-
-        if (ok) {
-          const limit = detectLimitHit(resp);
-          if (limit) {
-            const resetTime = limit.retryable ? parseResetTime(resp) : null;
-            logPing(triggerId, `limit-${limit.type}`, `exit=${exitCode} duration=${duration}ms`, resp);
-            finish({ success: false, duration, error: `${limit.type} limit hit`, response: resp, limitType: limit.type, resetTime: resetTime ?? undefined });
-            return;
-          }
-        }
-
-        logPing(triggerId, ok ? 'success' : 'error', `exit=${exitCode} duration=${duration}ms`, resp);
-        finish({ success: ok, duration, error: ok ? undefined : `process exited with code ${exitCode}`, response: resp });
+        releasePty(proc);
+        void conclude(exitCode, false);
       });
     });
   } catch (err) {
