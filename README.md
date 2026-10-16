@@ -123,7 +123,7 @@ Set exact ping times yourself:
 claude-shift add 03:00 --days weekdays
 claude-shift add 16:30 --days mon,wed,fri
 claude-shift add 06:00 --once             # One-time trigger for today
-claude-shift add 06:00 --once 2025-01-15  # One-time trigger for a specific date
+claude-shift add 06:00 --once YYYY-MM-DD  # One-time trigger for a specific (future) date
 ```
 
 ## View your schedule
@@ -156,6 +156,7 @@ Colors in your terminal distinguish work windows (green) from slot coverage (gra
 
 ```bash
 claude-shift remove 001   # Remove a trigger by ID
+claude-shift disable 001  # Pause a trigger (enable 001 to resume)
 claude-shift uninstall    # Remove all from OS scheduler
 claude-shift ping         # Test a ping right now
 ```
@@ -179,6 +180,10 @@ claude-shift config set pingPath /path --verify  # Set and validate with a test 
 | `nodePath` | *(auto-detected)* | Path to Node.js binary |
 | `pingPath` | *(empty)* | Working directory for pings (falls back to home dir) |
 | `pingMessage` | `ping` | Message sent to start the session |
+| `retryEnabled` | `true` | Retry a ping that fails |
+| `retryIntervals` | `5,15,30,45,60` | Minutes after the scheduled time for each retry (a late run retries a couple of minutes from now instead) |
+
+To run a separate, isolated instance (its own config dir and OS scheduler entries — handy for testing), set `CLAUDE_SHIFT_NAMESPACE`, e.g. `CLAUDE_SHIFT_NAMESPACE=test claude-shift list` uses `~/.claude-shift-test/`.
 
 ## Platform notes
 
