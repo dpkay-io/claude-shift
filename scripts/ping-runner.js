@@ -13,6 +13,7 @@ import { extractResponse, PTY_COLS, PTY_ROWS } from '../dist/core/response.js';
 import { createScheduler } from '../dist/scheduler/factory.js';
 import { retryStartMinutes } from '../dist/core/time-utils.js';
 import { ptySpawnTarget } from '../dist/utils/pty-spawn.js';
+import { TRUST_RE, trustDialogKeys } from '../dist/core/trust-dialog.js';
 import {
   NAMESPACE_ENV, NAMESPACE_ARG, configDir, namespaceArgs,
 } from '../dist/config/namespace.js';
@@ -40,18 +41,6 @@ function log(msg) {
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /[\x1B\x9B][[\]()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nq-uy=><~]/g;
-const TRUST_RE = /trust\s*this\s*folder/i;
-
-const KEY_ENTER = '\r';
-const KEY_DOWN_ENTER = '\x1b[B\r';
-
-// The trust dialog highlights its default option with "❯". Recent Claude versions default to
-// "No, exit", so a bare Enter would quit — move to the other option first in that case.
-function trustDialogKeys(cleanOutput) {
-  const marks = [...cleanOutput.matchAll(/❯\s*(?:\d+\.\s*)?(yes|no)\b/gi)];
-  const last = marks[marks.length - 1];
-  return last && last[1].toLowerCase() === 'no' ? KEY_DOWN_ENTER : KEY_ENTER;
-}
 
 function acquireLock() {
   try {
