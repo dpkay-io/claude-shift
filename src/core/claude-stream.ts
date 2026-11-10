@@ -17,6 +17,8 @@ export interface ClaudeRun {
   isError: boolean;
   subtype?: string;
   apiErrorStatus?: string | number;
+  /** Tokens Claude read for the request (fresh + cached input), from the result's usage. */
+  promptTokens?: number;
   /** The last rate-limit window Claude reported. */
   window?: RateLimitWindow;
   /** Claude produced an assistant message, a result or a rate-limit report, so the request reached the API. */
@@ -52,6 +54,14 @@ function epochSecondsToDate(value: unknown): Date | undefined {
   return seconds !== undefined && seconds > 0 ? new Date(seconds * MS_PER_SECOND) : undefined;
 }
 
+const PROMPT_TOKEN_FIELDS = ['input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens'] as const;
+
+function sumPromptTokens(usage: unknown): number | undefined {
+  if (!isObject(usage)) return undefined;
+  const counts = PROMPT_TOKEN_FIELDS.map((field) => asNumber(usage[field])).filter((n): n is number => n !== undefined);
+  return counts.length > 0 ? counts.reduce((sum, n) => sum + n, 0) : undefined;
+}
+
 function readWindow(info: JsonObject): RateLimitWindow {
   const type = asString(info.rateLimitType) ?? UNKNOWN_WINDOW;
   const windows = isObject(info.unifiedWindows) ? info.unifiedWindows : {};
@@ -85,6 +95,7 @@ export function createStreamParser(): StreamParser {
         run.resultText = asString(event.result);
         run.isError = event.is_error === true;
         run.subtype = asString(event.subtype);
+        run.promptTokens = sumPromptTokens(event.usage);
         run.apiErrorStatus = typeof status === 'string' || typeof status === 'number' ? status : undefined;
         break;
       }

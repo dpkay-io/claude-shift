@@ -12,6 +12,7 @@ const okRun = (overrides: Partial<ClaudeRun> = {}): ClaudeRun => ({
   resultText: 'pong',
   isError: false,
   subtype: 'success',
+  promptTokens: 2136,
   sawResponse: true,
   window: { type: 'five_hour', status: 'allowed', resetsAt: RESET, utilization: 0.73 },
   ...overrides,
@@ -123,6 +124,7 @@ describe('pingLogEntry', () => {
     expect(e.status).toBe('success');
     expect(e.detail).toContain('exit=0');
     expect(e.detail).toContain('duration=1500ms');
+    expect(e.detail).toContain('tokens=2136');
     expect(e.detail).toContain('window=five_hour(73%)');
     expect(e.detail).toMatch(/resets=2026-11-10 02:20:00/);
     expect(e.response).toBe('pong');
@@ -139,6 +141,12 @@ describe('pingLogEntry', () => {
     const e = pingLogEntry(buildPingResult(outcome({ run: okRun({ window: { type: 'five_hour', status: 'rejected', resetsAt: RESET } }) })));
     expect(e.status).toBe('limit-session');
     expect(e.detail).toMatch(/resets=2026-11-10 02:20:00/);
+  });
+
+  it('notes when the plain-arguments fallback was needed', () => {
+    const e = pingLogEntry({ ...buildPingResult(outcome()), launchFallback: true });
+    expect(e.detail).toContain('launch=full');
+    expect(pingLogEntry(buildPingResult(outcome())).detail).not.toContain('launch=');
   });
 
   it('marks a timeout in the detail', () => {

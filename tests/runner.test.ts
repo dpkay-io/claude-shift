@@ -96,7 +96,7 @@ describe('scripts/ping-runner.js (against a fake claude)', { timeout: TEST_TIMEO
     expect(exitCode).toBe(0);
     const log = readLog();
     expect(log).toMatch(/PING trigger=001 status=starting/);
-    expect(log).toMatch(/PING trigger=001 status=success detail="exit=0 duration=\d+ms window=five_hour\(73%\) resets=\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}" response="pong"/);
+    expect(log).toMatch(/PING trigger=001 status=success detail="exit=0 duration=\d+ms tokens=\d+ window=five_hour\(73%\) resets=\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}" response="pong"/);
 
     const record = claude.readRecord();
     expect(record.stdin).toBe(PING_MESSAGE);
@@ -110,13 +110,13 @@ describe('scripts/ping-runner.js (against a fake claude)', { timeout: TEST_TIMEO
     expect(readConfig().triggers[0].enabled).toBe(false);
   });
 
-  it('reports a failing claude as an error with the reason, and exits 1', async () => {
+  it('reports a failing claude as an error with the reason (after the plain-args retry), and exits 1', async () => {
     setup({ exitCode: 1, stderr: 'Error: Not logged in' });
     const { exitCode } = await run();
 
     expect(exitCode).toBe(1);
     const log = readLog();
-    expect(log).toMatch(/PING trigger=001 status=error detail="exit=1 duration=\d+ms reason=process exited with code 1 - Error: Not logged in"/);
+    expect(log).toMatch(/PING trigger=001 status=error detail="exit=1 duration=\d+ms launch=full reason=process exited with code 1 - Error: Not logged in"/);
     expect(log).toMatch(/RETRY trigger=001 status=disabled/);
     expect(readConfig().triggers[0].enabled).toBe(true);
   });

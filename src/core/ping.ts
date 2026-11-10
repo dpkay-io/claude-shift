@@ -26,9 +26,13 @@ export interface PingResult {
   response?: string;
   limitType?: LimitType;
   resetTime?: Date;
+  /** Tokens Claude read for this ping (fresh + cached input). */
+  promptTokens?: number;
   /** The rate-limit window Claude reported for this request (proves which window the ping counted against). */
   window?: RateLimitWindow;
   timedOut?: boolean;
+  /** The lean launch was rejected before Claude responded, so the ping was re-run with plain arguments. */
+  launchFallback?: boolean;
 }
 
 export interface PingOptions {
@@ -54,8 +58,17 @@ export const PING_TIMEOUT_MS = 120_000;
 
 // Print mode needs no terminal and no folder-trust prompt, and its event stream reports the
 // rate-limit window. The message goes in on stdin so it never meets a shell or cmd.exe parser.
-const CLAUDE_ARGS = ['-p', '--output-format', 'stream-json', '--verbose'];
+export const CLAUDE_BASE_ARGS = ['-p', '--output-format', 'stream-json', '--verbose'];
+
+// A ping only has to reach the API, so launch Claude without what it would normally load for a
+// session: customizations (CLAUDE.md, skills, plugins, hooks, MCP servers), the tool definitions,
+// and the long default system prompt. Measured on a real account this cut a ping from about
+// 26-36K prompt tokens to 0.6-2K. The empty string after --tools means "no tools" and must stay a
+// separate argument. Claude versions that predate a flag reject it, hence the plain-args retry.
+export const PING_SYSTEM_PROMPT = 'You are a connectivity check. Answer as briefly as possible.';
+export const CLAUDE_LEAN_ARGS = ['--safe-mode', '--tools', '', '--system-prompt', PING_SYSTEM_PROMPT];
 const STDERR_TAIL_CHARS = 1000;
+const MIN_RETRY_TIMEOUT_MS = 1000;
 const REJECTED_STATUS = 'rejected';
 const FIVE_HOUR_WINDOW = 'five_hour';
 const SEVEN_DAY_WINDOW_PREFIX = 'seven_day';
@@ -130,7 +143,7 @@ function failureReason({ run, exitCode, stderrTail }: PingOutcome): string {
 /** Turns what was observed about a claude run into the ping's verdict. Pure, so it is easy to test. */
 export function buildPingResult(outcome: PingOutcome): PingResult {
   const { run, exitCode, timedOut, durationMs } = outcome;
-  const base = { duration: durationMs, exitCode, response: run.resultText, window: run.window, timedOut: timedOut || undefined };
+  const base = { duration: durationMs, exitCode, response: run.resultText, promptTokens: run.promptTokens, window: run.window, timedOut: timedOut || undefined };
 
   const limit = findLimit(run);
   if (limit) {
@@ -150,7 +163,9 @@ export function buildPingResult(outcome: PingOutcome): PingResult {
 export function pingLogEntry(result: PingResult): PingLogEntry {
   const status = result.limitType ? `limit-${result.limitType}` : result.success ? 'success' : 'error';
   const parts = [`exit=${result.exitCode ?? 'none'}`, `duration=${result.duration}ms`];
+  if (result.promptTokens !== undefined) parts.push(`tokens=${result.promptTokens}`);
   if (result.timedOut) parts.push('timeout');
+  if (result.launchFallback) parts.push('launch=full');
   if (result.window) {
     const used = result.window.utilization;
     parts.push(`window=${result.window.type}${used !== undefined ? `(${Math.round(used * PERCENT)}%)` : ''}`);
@@ -179,48 +194,46 @@ function killProcessTree(child: ChildProcess): void {
   try { child.kill('SIGKILL'); } catch {}
 }
 
-/** Sends `message` to Claude in print mode and reports what happened. Never throws and never logs. */
-export function executePing(claudePath: string, message: string, cwd?: string, options: PingOptions = {}): Promise<PingResult> {
-  try {
-    validatePath(claudePath);
-  } catch (err) {
-    return Promise.resolve({ success: false, duration: 0, error: toErrorMessage(err) });
-  }
+type LaunchTarget = { file: string; args: string[] };
 
-  const resolved = path.isAbsolute(claudePath) ? claudePath : resolveExePath(claudePath);
-  const target = claudeSpawnTarget(resolved);
+// Claude exited without ever answering (and was not just slow): the likeliest cause is an
+// option this Claude version does not know, so it is worth one retry without the lean flags.
+const launchRejected = (o: PingOutcome): boolean => !o.timedOut && o.exitCode !== 0 && !o.run.sawResponse;
+
+/** Runs claude once and reports what was observed. Resolves with a start error if it cannot be launched. */
+function runClaude(target: LaunchTarget, extraArgs: string[], message: string, cwd: string | undefined, timeoutMs: number): Promise<PingOutcome | { startError: string }> {
   const start = Date.now();
   const parser = createStreamParser();
 
-  return new Promise<PingResult>((resolve) => {
+  return new Promise((resolve) => {
     let settled = false;
     let timedOut = false;
     let stderrTail = '';
     let timer: ReturnType<typeof setTimeout> | undefined;
 
-    const settle = (result: PingResult): void => {
+    const settle = (value: PingOutcome | { startError: string }): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve(result);
+      resolve(value);
     };
-    const fail = (error: string): void => settle({ success: false, duration: Date.now() - start, error });
+    const fail = (err: unknown): void => settle({ startError: `Could not start claude (${target.file}): ${toErrorMessage(err)}` });
     const finish = (exitCode: number | null): void =>
-      settle(buildPingResult({ run: parser.finish(), exitCode, timedOut, durationMs: Date.now() - start, stderrTail }));
+      settle({ run: parser.finish(), exitCode, timedOut, durationMs: Date.now() - start, stderrTail });
 
     let child: ChildProcess;
     try {
-      child = spawn(target.file, [...target.args, ...CLAUDE_ARGS], {
+      child = spawn(target.file, [...target.args, ...CLAUDE_BASE_ARGS, ...extraArgs], {
         cwd: cwd || os.homedir(),
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });
     } catch (err) {
-      fail(`Could not start claude (${resolved}): ${toErrorMessage(err)}`);
+      fail(err);
       return;
     }
 
-    child.once('error', (err) => fail(`Could not start claude (${resolved}): ${toErrorMessage(err)}`));
+    child.once('error', fail);
     child.stdout?.setEncoding('utf-8');
     child.stdout?.on('data', (chunk: string) => parser.push(chunk));
     child.stderr?.setEncoding('utf-8');
@@ -234,6 +247,32 @@ export function executePing(claudePath: string, message: string, cwd?: string, o
       timedOut = true;
       killProcessTree(child);
       finish(null);
-    }, options.timeoutMs ?? PING_TIMEOUT_MS);
+    }, timeoutMs);
   });
+}
+
+/** Sends `message` to Claude in print mode and reports what happened. Never throws and never logs. */
+export async function executePing(claudePath: string, message: string, cwd?: string, options: PingOptions = {}): Promise<PingResult> {
+  try {
+    validatePath(claudePath);
+  } catch (err) {
+    return { success: false, duration: 0, error: toErrorMessage(err) };
+  }
+
+  const resolved = path.isAbsolute(claudePath) ? claudePath : resolveExePath(claudePath);
+  const target = claudeSpawnTarget(resolved);
+  const timeoutMs = options.timeoutMs ?? PING_TIMEOUT_MS;
+  const start = Date.now();
+
+  let attempt = await runClaude(target, CLAUDE_LEAN_ARGS, message, cwd, timeoutMs);
+  let launchFallback = false;
+  if (!('startError' in attempt) && launchRejected(attempt)) {
+    launchFallback = true;
+    // The retry shares the original deadline, so a ping never runs longer than one timeout in total.
+    attempt = await runClaude(target, [], message, cwd, Math.max(timeoutMs - (Date.now() - start), MIN_RETRY_TIMEOUT_MS));
+  }
+
+  if ('startError' in attempt) return { success: false, duration: Date.now() - start, error: attempt.startError };
+  const result = buildPingResult({ ...attempt, durationMs: Date.now() - start });
+  return launchFallback ? { ...result, launchFallback } : result;
 }

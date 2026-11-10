@@ -23,6 +23,7 @@ describe('createStreamParser', () => {
     expect(run.resultText).toBe('pong');
     expect(run.isError).toBe(false);
     expect(run.subtype).toBe('success');
+    expect(run.promptTokens).toBeGreaterThan(0);
     expect(run.sawResponse).toBe(true);
     expect(run.window).toEqual({
       type: 'five_hour',
@@ -86,6 +87,17 @@ describe('createStreamParser', () => {
       json({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'seven_day', resetsAt: 2000 } }),
     ].join('\n'));
     expect(run.window).toMatchObject({ type: 'seven_day', status: 'rejected', resetsAt: new Date(2000 * 1000) });
+  });
+
+  it('sums fresh and cached input tokens, ignoring output tokens', () => {
+    const run = parse(json({ type: 'result', is_error: false, usage: { input_tokens: 2, cache_creation_input_tokens: 100, cache_read_input_tokens: 30, output_tokens: 999 } }));
+    expect(run.promptTokens).toBe(132);
+  });
+
+  it('leaves tokens unknown when usage is missing or malformed', () => {
+    expect(parse(json({ type: 'result', is_error: false })).promptTokens).toBeUndefined();
+    expect(parse(json({ type: 'result', is_error: false, usage: 'lots' })).promptTokens).toBeUndefined();
+    expect(parse(json({ type: 'result', is_error: false, usage: { input_tokens: 'x' } })).promptTokens).toBeUndefined();
   });
 
   it('tolerates a window with missing or malformed fields', () => {

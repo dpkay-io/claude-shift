@@ -12,11 +12,15 @@ export interface FakeClaudeSpec {
   stdout?: string[];
   stderr?: string;
   exitCode?: number;
+  /** Exit 1 with an "unknown option" error, printing nothing else, if launched with this flag (an older claude). */
+  rejectFlag?: string;
   /** Keep running this long after replaying output, to exercise the timeout. */
   hangMs?: number;
 }
 
 export interface FakeClaudeRecord {
+  /** How many times claude was launched. */
+  runs: number;
   argv: string[];
   cwd: string;
   stdin: string;
@@ -44,7 +48,14 @@ let stdin = '';
 process.stdin.setEncoding('utf-8');
 process.stdin.on('data', (chunk) => { stdin += chunk; });
 process.stdin.on('end', async () => {
-  fs.writeFileSync(path.join(dir, '${RECORD_NAME}'), JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), stdin }));
+  const recordFile = path.join(dir, '${RECORD_NAME}');
+  const runs = (fs.existsSync(recordFile) ? JSON.parse(fs.readFileSync(recordFile, 'utf-8')).runs : 0) + 1;
+  fs.writeFileSync(recordFile, JSON.stringify({ runs, argv: process.argv.slice(2), cwd: process.cwd(), stdin }));
+  if (spec.rejectFlag && process.argv.includes(spec.rejectFlag)) {
+    process.stderr.write("error: unknown option '" + spec.rejectFlag + "'\\n");
+    process.exitCode = 1;
+    return;
+  }
   for (const line of spec.stdout ?? []) process.stdout.write(line + '\\n');
   if (spec.stderr) process.stderr.write(spec.stderr);
   if (spec.hangMs) await new Promise((resolve) => setTimeout(resolve, spec.hangMs));

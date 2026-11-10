@@ -75,7 +75,7 @@ With claude-shift:
 
 1. **You define when you work** — provide your work windows (smart mode) or exact ping times (manual mode)
 2. **claude-shift calculates** when to fire pings so that fresh 5h windows line up with your work blocks
-3. **Your OS scheduler runs the pings** — each one runs `claude -p` (Claude Code's non-interactive print mode), sends one short message, and exits. No terminal is involved, so there is no folder-trust prompt to get stuck on
+3. **Your OS scheduler runs the pings** — each one runs `claude -p` (Claude Code's non-interactive print mode), sends one short message, and exits. No terminal is involved, so there is no folder-trust prompt to get stuck on. The ping runs Claude lean (no tools, hooks, skills or CLAUDE.md, and a one-line system prompt), so it reads about 0.6–2K tokens instead of 26–36K; each ping line in the log records its `tokens=`
 
 That's it. No daemon, no background process. Just your OS's native scheduler doing its job:
 - **Windows** — Task Scheduler (`schtasks`)

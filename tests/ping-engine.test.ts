@@ -2,11 +2,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { executePing } from '../src/core/ping.js';
+import { CLAUDE_BASE_ARGS, CLAUDE_LEAN_ARGS, executePing } from '../src/core/ping.js';
 import { createFakeClaude, type FakeClaude, type FakeClaudeSpec } from './helpers/fake-claude.js';
 
 const REAL_SUCCESS_LINES = fs.readFileSync(path.join(__dirname, 'fixtures', 'claude-stream-success.jsonl'), 'utf-8').trim().split('\n');
-const EXPECTED_ARGS = ['-p', '--output-format', 'stream-json', '--verbose'];
+const LEAN_LAUNCH_ARGS = [...CLAUDE_BASE_ARGS, ...CLAUDE_LEAN_ARGS];
 // Shell metacharacters that would break a message passed on a Windows command line.
 const AWKWARD_MESSAGE = 'ping & echo "hi" | find > out.txt %PATH% ^ !';
 const SHORT_TIMEOUT_MS = 1500;
@@ -31,8 +31,53 @@ describe('executePing (against a fake claude)', () => {
     expect(result.window).toMatchObject({ type: 'five_hour', status: 'allowed' });
 
     const record = claude.readRecord();
-    expect(record.argv).toEqual(EXPECTED_ARGS);
+    expect(record.argv).toEqual(LEAN_LAUNCH_ARGS);
+    expect(record.runs).toBe(1);
     expect(record.stdin).toBe(AWKWARD_MESSAGE);
+  }, TEST_TIMEOUT_MS);
+
+  it('launches claude lean: no tools, no customizations, a minimal system prompt', () => {
+    expect(CLAUDE_LEAN_ARGS).toEqual(expect.arrayContaining(['--safe-mode', '--tools', '', '--system-prompt']));
+    // The empty value must be its own argument, or claude would treat the next flag as the tool list.
+    expect(CLAUDE_LEAN_ARGS[CLAUDE_LEAN_ARGS.indexOf('--tools') + 1]).toBe('');
+  });
+
+  it('delivers the empty --tools argument intact through the launcher (cmd.exe shim on Windows)', async () => {
+    const claude = fake({ stdout: REAL_SUCCESS_LINES });
+    await executePing(claude.command, 'ping');
+    const argv = claude.readRecord().argv;
+    expect(argv[argv.indexOf('--tools') + 1]).toBe('');
+  }, TEST_TIMEOUT_MS);
+
+  it('retries once with plain arguments when an older claude rejects the lean flags', async () => {
+    const claude = fake({ stdout: REAL_SUCCESS_LINES, rejectFlag: '--safe-mode' });
+    const result = await executePing(claude.command, 'ping');
+
+    expect(result.success).toBe(true);
+    expect(result.launchFallback).toBe(true);
+    const record = claude.readRecord();
+    expect(record.runs).toBe(2);
+    expect(record.argv).toEqual(CLAUDE_BASE_ARGS);
+    expect(record.stdin).toBe('ping');
+  }, TEST_TIMEOUT_MS);
+
+  it('does not retry when claude responded, e.g. a rate limit', async () => {
+    const claude = fake({
+      exitCode: 1,
+      stdout: [JSON.stringify({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour' } })],
+    });
+    const result = await executePing(claude.command, 'ping');
+    expect(result.limitType).toBe('session');
+    expect(result.launchFallback).toBeUndefined();
+    expect(claude.readRecord().runs).toBe(1);
+  }, TEST_TIMEOUT_MS);
+
+  it('retries a failure with no response once, then reports it (it may be the lean flags)', async () => {
+    const claude = fake({ exitCode: 1, stderr: 'Error: Not logged in' });
+    const result = await executePing(claude.command, 'ping');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Not logged in');
+    expect(claude.readRecord().runs).toBe(2);
   }, TEST_TIMEOUT_MS);
 
   it('runs claude in the requested folder', async () => {
