@@ -10,7 +10,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { executePing, pingLogEntry, PING_TIMEOUT_MS } from '../dist/core/ping.js';
 import { createScheduler } from '../dist/scheduler/factory.js';
-import { retryStartMinutes, formatLocalDateTime } from '../dist/core/time-utils.js';
+import { retryStartMinutes, minutesLate, formatLocalDateTime, parseTime } from '../dist/core/time-utils.js';
 import { resolveExePath } from '../dist/utils/claude-check.js';
 import { SHELL_META } from '../dist/utils/text.js';
 import {
@@ -26,6 +26,8 @@ const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const LOG_FILE = path.join(CONFIG_DIR, 'ping.log');
 const LOCK_FILE = path.join(CONFIG_DIR, 'ping.lock');
 // A lock older than the longest a ping can run (plus slack) belongs to a crashed runner.
+// Runs that start this many minutes or more after their scheduled time are reported as late.
+const LATE_START_MINUTES = 5;
 const LOCK_STALE_MS = PING_TIMEOUT_MS + 30_000;
 
 function log(msg) {
@@ -406,6 +408,19 @@ async function main() {
         releaseLock();
         process.exit(0);
         return;
+      }
+      // A start the OS ran late (the PC was asleep or locked out at the scheduled minute) is logged so a
+      // catch-up run can be told from an on-time one.
+      if (trigger && !isRetry && !isLimitRetry) {
+        try {
+          const now = new Date();
+          const late = minutesLate(parseTime(trigger.time), now.getHours() * 60 + now.getMinutes());
+          if (late >= LATE_START_MINUTES) {
+            log(`LATE trigger=${triggerId} detail="started ${late} min after its scheduled ${trigger.time} (catch-up run)"`);
+          }
+        } catch {
+          // An unreadable trigger time only costs this note, never the ping.
+        }
       }
     }
     const claudePath = loadClaudePath(config);

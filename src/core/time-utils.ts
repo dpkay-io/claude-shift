@@ -32,6 +32,14 @@ export function retryStartMinutes(scheduledMinutes: number, offsetMinutes: numbe
   return Math.max(scheduled + offsetMinutes, nowMinutes + minLeadMinutes);
 }
 
+/**
+ * Minutes a run started after its scheduled time today, or 0 when it is on time. A scheduled time later
+ * than now belongs to yesterday (a run delayed past midnight), matching retryStartMinutes.
+ */
+export function minutesLate(scheduledMinutes: number, nowMinutes: number): number {
+  return scheduledMinutes > nowMinutes ? nowMinutes + MINUTES_PER_DAY - scheduledMinutes : nowMinutes - scheduledMinutes;
+}
+
 export function formatTime(minutes: number): string {
   const normalized = ((minutes % 1440) + 1440) % 1440;
   const h = Math.floor(normalized / 60);

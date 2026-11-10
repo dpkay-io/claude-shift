@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The Windows scheduler is driven through `schtasks`; mock the process layer so its failure
@@ -59,5 +60,39 @@ describe('SchtasksScheduler.remove', () => {
   it('stays quiet when the task does not exist', async () => {
     execFileSync.mockImplementation(() => { throw new Error('ERROR: The system cannot find the file specified.'); });
     await expect(new SchtasksScheduler().remove('001')).resolves.toBeUndefined();
+  });
+});
+
+describe('SchtasksScheduler.install', () => {
+  const task = { id: '001', command: '"C:\\node.exe" "C:\\runner.js" "001"', time: '05:00', days: ['mon' as const] };
+  const isCreate = (args: string[]): boolean => args[0] === '/create';
+
+  beforeEach(() => { execFileSync.mockReset(); });
+
+  it('registers the task from a UTF-16 XML file and removes the file afterwards', async () => {
+    let seen: { args: string[]; bytes: Buffer } | undefined;
+    execFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (isCreate(args)) seen = { args, bytes: fs.readFileSync(args[args.indexOf('/xml') + 1]) };
+      return '';
+    });
+    await new SchtasksScheduler().install(task);
+
+    expect(seen?.args.slice(0, 3)).toEqual(['/create', '/tn', 'claude-shift-001']);
+    expect(seen?.args).toContain('/f');
+    expect([...seen!.bytes.subarray(0, 2)]).toEqual([0xff, 0xfe]);
+    const text = seen!.bytes.subarray(2).toString('utf16le');
+    expect(text).toContain('<StartWhenAvailable>true</StartWhenAvailable>');
+    expect(text).toContain('<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>');
+    expect(fs.existsSync(seen!.args[seen!.args.indexOf('/xml') + 1])).toBe(false);
+  });
+
+  it('removes the XML file and reports the error when schtasks rejects it', async () => {
+    let file = '';
+    execFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (isCreate(args)) { file = args[args.indexOf('/xml') + 1]; throw new Error('ERROR: The task XML is malformed.'); }
+      return '';
+    });
+    await expect(new SchtasksScheduler().install(task)).rejects.toThrow(/malformed/);
+    expect(fs.existsSync(file)).toBe(false);
   });
 });

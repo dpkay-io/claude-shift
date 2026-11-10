@@ -23,6 +23,8 @@ const PING_MESSAGE = 'ping from the runner test';
 const TEST_TIMEOUT_MS = 40_000;
 const DAYS_AHEAD_BEYOND_TODAY = 3;
 const SECONDS_PER_DAY = 86_400;
+const MINUTES_PER_DAY = 24 * 60;
+const LATE_BY_MINUTES = 90;
 
 const REAL_SUCCESS_LINES = fs.readFileSync(path.join(__dirname, 'fixtures', 'claude-stream-success.jsonl'), 'utf-8').trim().split('\n');
 
@@ -155,5 +157,27 @@ describe('scripts/ping-runner.js (against a fake claude)', { timeout: TEST_TIMEO
     expect(exitCode).toBe(0);
     expect(readLog()).toMatch(/SKIP another ping is running/);
     expect(() => claude.readRecord()).toThrow();
+  });
+
+  // The scheduler runs a missed start as soon as the PC is available; the log must show that it was late.
+  const hhmmFromNow = (offsetMinutes: number): string => {
+    const now = new Date();
+    const total = (now.getHours() * 60 + now.getMinutes() + offsetMinutes + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+    return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+  };
+
+  it('notes in the log when the scheduler started a trigger late (a catch-up run), and still pings', async () => {
+    setup({ stdout: REAL_SUCCESS_LINES }, { time: hhmmFromNow(-LATE_BY_MINUTES) });
+    const { exitCode } = await run();
+
+    expect(exitCode).toBe(0);
+    expect(readLog()).toMatch(/LATE trigger=001 detail="started 9\d min after its scheduled \d{2}:\d{2} \(catch-up run\)"/);
+    expect(readLog()).toMatch(/PING trigger=001 status=success/);
+  });
+
+  it('does not note anything for a run that starts on time', async () => {
+    setup({ stdout: REAL_SUCCESS_LINES }, { time: hhmmFromNow(0) });
+    await run();
+    expect(readLog()).not.toMatch(/LATE/);
   });
 });

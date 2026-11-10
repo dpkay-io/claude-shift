@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseTime, formatTime, formatTime12h,
   previousDay, nextDay, parseDays, formatDays, sortDays,
-  parseDate, parseSlots, retryStartMinutes,
+  parseDate, parseSlots, retryStartMinutes, minutesLate,
 } from '../src/core/time-utils.js';
 
 describe('parseTime', () => {
@@ -192,5 +192,17 @@ describe('retryStartMinutes', () => {
 
   it('can land past midnight so callers can skip it', () => {
     expect(retryStartMinutes(at('23:50'), 15, at('23:51'), LEAD)).toBeGreaterThanOrEqual(24 * 60);
+  });
+});
+
+describe('minutesLate', () => {
+  it('is 0 when on time and counts minutes after the scheduled time', () => {
+    expect(minutesLate(300, 300)).toBe(0);
+    expect(minutesLate(300, 304)).toBe(4);
+    expect(minutesLate(300, 540)).toBe(240);
+  });
+
+  it('treats a scheduled time later than now as yesterday\'s (run delayed past midnight)', () => {
+    expect(minutesLate(23 * 60 + 50, 5)).toBe(15);
   });
 });
