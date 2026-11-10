@@ -2,7 +2,7 @@ import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { resolveExePath } from '../utils/claude-check.js';
-import { claudeSpawnTarget } from '../utils/spawn-target.js';
+import { claudeSpawnTarget, type SpawnTarget } from '../utils/spawn-target.js';
 import { SHELL_META, toErrorMessage } from '../utils/text.js';
 import { createStreamParser, type ClaudeRun, type RateLimitWindow } from './claude-stream.js';
 import { formatLocalDateTime } from './time-utils.js';
@@ -194,14 +194,12 @@ function killProcessTree(child: ChildProcess): void {
   try { child.kill('SIGKILL'); } catch {}
 }
 
-type LaunchTarget = { file: string; args: string[] };
-
 // Claude exited without ever answering (and was not just slow): the likeliest cause is an
 // option this Claude version does not know, so it is worth one retry without the lean flags.
 const launchRejected = (o: PingOutcome): boolean => !o.timedOut && o.exitCode !== 0 && !o.run.sawResponse;
 
 /** Runs claude once and reports what was observed. Resolves with a start error if it cannot be launched. */
-function runClaude(target: LaunchTarget, extraArgs: string[], message: string, cwd: string | undefined, timeoutMs: number): Promise<PingOutcome | { startError: string }> {
+function runClaude(claudeFile: string, extraArgs: string[], message: string, cwd: string | undefined, timeoutMs: number): Promise<PingOutcome | { startError: string }> {
   const start = Date.now();
   const parser = createStreamParser();
 
@@ -209,6 +207,13 @@ function runClaude(target: LaunchTarget, extraArgs: string[], message: string, c
     let settled = false;
     let timedOut = false;
     let stderrTail = '';
+    let target: SpawnTarget;
+    try {
+      target = claudeSpawnTarget(claudeFile, [...CLAUDE_BASE_ARGS, ...extraArgs]);
+    } catch (err) {
+      resolve({ startError: toErrorMessage(err) });
+      return;
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const settle = (value: PingOutcome | { startError: string }): void => {
@@ -217,16 +222,17 @@ function runClaude(target: LaunchTarget, extraArgs: string[], message: string, c
       clearTimeout(timer);
       resolve(value);
     };
-    const fail = (err: unknown): void => settle({ startError: `Could not start claude (${target.file}): ${toErrorMessage(err)}` });
+    const fail = (err: unknown): void => settle({ startError: `Could not start claude (${claudeFile}): ${toErrorMessage(err)}` });
     const finish = (exitCode: number | null): void =>
       settle({ run: parser.finish(), exitCode, timedOut, durationMs: Date.now() - start, stderrTail });
 
     let child: ChildProcess;
     try {
-      child = spawn(target.file, [...target.args, ...CLAUDE_BASE_ARGS, ...extraArgs], {
+      child = spawn(target.file, target.args, {
         cwd: cwd || os.homedir(),
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
+        windowsVerbatimArguments: target.windowsVerbatimArguments,
       });
     } catch (err) {
       fail(err);
@@ -260,16 +266,15 @@ export async function executePing(claudePath: string, message: string, cwd?: str
   }
 
   const resolved = path.isAbsolute(claudePath) ? claudePath : resolveExePath(claudePath);
-  const target = claudeSpawnTarget(resolved);
   const timeoutMs = options.timeoutMs ?? PING_TIMEOUT_MS;
   const start = Date.now();
 
-  let attempt = await runClaude(target, CLAUDE_LEAN_ARGS, message, cwd, timeoutMs);
+  let attempt = await runClaude(resolved, CLAUDE_LEAN_ARGS, message, cwd, timeoutMs);
   let launchFallback = false;
   if (!('startError' in attempt) && launchRejected(attempt)) {
     launchFallback = true;
     // The retry shares the original deadline, so a ping never runs longer than one timeout in total.
-    attempt = await runClaude(target, [], message, cwd, Math.max(timeoutMs - (Date.now() - start), MIN_RETRY_TIMEOUT_MS));
+    attempt = await runClaude(resolved, [], message, cwd, Math.max(timeoutMs - (Date.now() - start), MIN_RETRY_TIMEOUT_MS));
   }
 
   if ('startError' in attempt) return { success: false, duration: Date.now() - start, error: attempt.startError };

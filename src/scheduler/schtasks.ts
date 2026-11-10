@@ -12,8 +12,14 @@ function taskName(id: string): string {
   return `${schtasksPrefix()}${id}`;
 }
 
+const SCHTASKS_TIMEOUT_MS = 15_000;
+// Listing walks every task on the machine, which took about 12s on a real Windows box, so it gets
+// far more room than a single create/delete. A listing that times out must not read as "no tasks".
+const SCHTASKS_QUERY_TIMEOUT_MS = 60_000;
+
 function schtasks(...args: string[]): string {
-  return execFileSync('schtasks', args, { encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] });
+  const timeout = args[0] === '/query' ? SCHTASKS_QUERY_TIMEOUT_MS : SCHTASKS_TIMEOUT_MS;
+  return execFileSync('schtasks', args, { encoding: 'utf-8', timeout, stdio: ['pipe', 'pipe', 'pipe'] });
 }
 
 export type DateOrder = 'MDY' | 'DMY' | 'YMD';
@@ -71,21 +77,23 @@ export class SchtasksScheduler implements SchedulerBackend {
   }
 
   async removeAll(): Promise<void> {
-    try {
-      const output = schtasks('/query', '/fo', 'CSV', '/nh');
-      for (const line of output.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        const cols = trimmed.split('","').map(s => s.replace(/"/g, ''));
-        if (cols.length < 1 || !cols[0]) continue;
-        const name = cols[0].replace(/^\\+/, '');
-        if (!name.startsWith(schtasksPrefix())) continue;
-        const id = name.slice(schtasksPrefix().length);
-        await this.remove(id);
+    // Errors are not swallowed here: uninstall must not say "removed" for tasks that are still there.
+    const output = schtasks('/query', '/fo', 'CSV', '/nh');
+    const failed: string[] = [];
+    for (const line of output.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const cols = trimmed.split('","').map(s => s.replace(/"/g, ''));
+      if (cols.length < 1 || !cols[0]) continue;
+      const name = cols[0].replace(/^\\+/, '');
+      if (!name.startsWith(schtasksPrefix())) continue;
+      try {
+        schtasks('/delete', '/tn', name, '/f');
+      } catch (err) {
+        failed.push(`${name} (${toErrorMessage(err).trim()})`);
       }
-    } catch {
-      // No tasks found or query failed — nothing to remove
     }
+    if (failed.length > 0) throw new Error(`Could not remove: ${failed.join('; ')}`);
   }
 
   async list(): Promise<InstalledTask[]> {

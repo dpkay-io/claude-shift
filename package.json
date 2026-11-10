@@ -13,12 +13,13 @@
   "scripts": {
     "build": "npm run clean && tsc",
     "dev": "tsc --watch",
-    "test": "vitest run --exclude tests/cli.test.ts --exclude tests/runner.test.ts",
-    "test:watch": "vitest --exclude tests/cli.test.ts --exclude tests/runner.test.ts",
+    "test": "vitest run --exclude tests/cli.test.ts --exclude tests/runner.test.ts --exclude=tests/live/**",
+    "test:watch": "vitest --exclude tests/cli.test.ts --exclude tests/runner.test.ts --exclude=tests/live/**",
     "test:e2e": "npm run build && vitest run tests/cli.test.ts tests/runner.test.ts",
-    "test:all": "npm run build && vitest run",
+    "test:all": "npm run build && vitest run --exclude=tests/live/**",
     "prepublishOnly": "npm run build",
-    "clean": "node -e \"import('node:fs').then(fs => fs.rmSync('dist', { recursive: true, force: true }))\""
+    "clean": "node -e \"import('node:fs').then(fs => fs.rmSync('dist', { recursive: true, force: true }))\"",
+    "test:live": "npm run build && vitest run tests/live"
   },
   "keywords": [
     "claude",
