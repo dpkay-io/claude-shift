@@ -4,6 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
+// Longer than the scheduler's own 60s task-list timeout, so a slow Windows schtasks fails in the tool, not in the harness.
+const CLI_TIMEOUT_MS = 90_000;
+const TEST_TIMEOUT_MS = 120_000;
+
 const NODE = process.execPath;
 const CLI = path.resolve('dist/index.js');
 // Runs every command as an isolated instance: its own config dir and OS scheduler entries
@@ -19,7 +23,7 @@ function cli(...args: string[]): Promise<{ stdout: string; exitCode: number }> {
   return new Promise((resolve) => {
     execFile(NODE, [CLI, ...args], {
       encoding: 'utf-8',
-      timeout: 15000,
+      timeout: CLI_TIMEOUT_MS,
       env: { ...process.env, NO_COLOR: '1', CLAUDE_SHIFT_NAMESPACE: NAMESPACE },
     }, (err, stdout, stderr) => {
       const code = (err as { code?: number | string } | null)?.code;
@@ -49,7 +53,7 @@ function freshConfig(overrides: Record<string, unknown> = {}): void {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n');
 }
 
-describe('CLI E2E', { timeout: 20000 }, () => {
+describe('CLI E2E', { timeout: TEST_TIMEOUT_MS }, () => {
   beforeAll(() => {
     if (!fs.existsSync(CLI)) {
       throw new Error('dist/index.js not found — run `npm run build` before E2E tests.');
