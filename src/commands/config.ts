@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadConfig, saveConfig } from '../config/manager.js';
 import type { Settings } from '../config/schema.js';
-import { executePing } from '../core/ping.js';
+import { executeLoggedPing } from '../core/logged-ping.js';
 import * as display from '../utils/display.js';
 import chalk from 'chalk';
 
@@ -103,7 +103,7 @@ export async function configSetCommand(key: string, value: string, options?: { v
 
   if (key === 'pingPath' && options?.verify) {
     display.info('Running validation ping from the new path...');
-    const pingResult = await executePing(
+    const pingResult = await executeLoggedPing(
       config.settings.claudePath,
       config.settings.pingMessage,
       'validation',

@@ -75,7 +75,7 @@ With claude-shift:
 
 1. **You define when you work** — provide your work windows (smart mode) or exact ping times (manual mode)
 2. **claude-shift calculates** when to fire pings so that fresh 5h windows line up with your work blocks
-3. **Your OS scheduler runs the pings** — each one briefly opens Claude CLI, sends a message, and exits
+3. **Your OS scheduler runs the pings** — each one runs `claude -p` (Claude Code's non-interactive print mode), sends one short message, and exits. No terminal is involved, so there is no folder-trust prompt to get stuck on
 
 That's it. No daemon, no background process. Just your OS's native scheduler doing its job:
 - **Windows** — Task Scheduler (`schtasks`)
@@ -132,7 +132,7 @@ claude-shift add 06:00 --once YYYY-MM-DD  # One-time trigger for a specific (fut
 claude-shift today    # Today's timeline
 claude-shift week     # Full week view
 claude-shift list     # All configured triggers
-claude-shift status   # Scheduler status + ping logs
+claude-shift status   # Scheduler status, ping logs, and a warning if recent pings keep failing
 ```
 
 Weekly timeline output:

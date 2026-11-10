@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { CONFIG_DIR, LOG_FILE } from '../config/defaults.js';
+import { formatLocalDateTime } from '../core/time-utils.js';
 
 const MAX_LOG_SIZE = 1024 * 1024; // 1MB
 const KEEP_LINES = 500;
@@ -22,16 +23,11 @@ function sanitize(s: string): string {
   return s.replace(/[\n\r]/g, ' ').replace(/"/g, "'");
 }
 
-function formatLocalTime(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
 export function logPing(triggerId: string, status: string, detail?: string, response?: string): void {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   const filePath = LOG_FILE;
   rotateIfNeeded(filePath);
-  const localTime = formatLocalTime(new Date());
+  const localTime = formatLocalDateTime(new Date());
   const extra = detail ? ` detail="${sanitize(detail).slice(0, 500)}"` : '';
   const resp = response ? ` response="${sanitize(response).slice(0, 500)}"` : '';
   const line = `[${localTime}] PING trigger=${sanitize(triggerId)} status=${status}${extra}${resp}\n`;

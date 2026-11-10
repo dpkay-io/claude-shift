@@ -147,6 +147,12 @@ export function todayDateString(): string {
   return `${y}-${m}-${d}`;
 }
 
+/** Local "YYYY-MM-DD HH:mm:ss", the timestamp format used in ping.log. */
+export function formatLocalDateTime(date: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 export function dateToDayOfWeek(date: string): DayOfWeek {
   const [y, m, d] = date.split('-').map(Number);
   const dt = new Date(y!, m! - 1, d!);

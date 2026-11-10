@@ -4,16 +4,15 @@
 // Runs outside the CLI, so it only imports small side-effect-free helpers from the compiled
 // project (dist/ always ships next to scripts/ — the `claude-shift` bin itself lives there).
 
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { extractResponse, PTY_COLS, PTY_ROWS } from '../dist/core/response.js';
+import { executePing, pingLogEntry, PING_TIMEOUT_MS } from '../dist/core/ping.js';
 import { createScheduler } from '../dist/scheduler/factory.js';
-import { retryStartMinutes } from '../dist/core/time-utils.js';
-import { ptySpawnTarget } from '../dist/utils/pty-spawn.js';
-import { TRUST_RE, trustDialogKeys } from '../dist/core/trust-dialog.js';
+import { retryStartMinutes, formatLocalDateTime } from '../dist/core/time-utils.js';
+import { resolveExePath } from '../dist/utils/claude-check.js';
+import { SHELL_META } from '../dist/utils/text.js';
 import {
   NAMESPACE_ENV, NAMESPACE_ARG, configDir, namespaceArgs,
 } from '../dist/config/namespace.js';
@@ -26,27 +25,20 @@ const CONFIG_DIR = configDir();
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const LOG_FILE = path.join(CONFIG_DIR, 'ping.log');
 const LOCK_FILE = path.join(CONFIG_DIR, 'ping.lock');
-const SHELL_META = /[;&|`${}[\]!#~<>*?\n\r]/;
-
-function formatLocalTime(date) {
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
+// A lock older than the longest a ping can run (plus slack) belongs to a crashed runner.
+const LOCK_STALE_MS = PING_TIMEOUT_MS + 30_000;
 
 function log(msg) {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   const safe = String(msg).replace(/[\n\r]/g, ' ');
-  fs.appendFileSync(LOG_FILE, `[${formatLocalTime(new Date())}] ${safe}\n`, 'utf-8');
+  fs.appendFileSync(LOG_FILE, `[${formatLocalDateTime(new Date())}] ${safe}\n`, 'utf-8');
 }
-
-// eslint-disable-next-line no-control-regex
-const ANSI_RE = /[\x1B\x9B][[\]()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nq-uy=><~]/g;
 
 function acquireLock() {
   try {
     try {
       const stat = fs.statSync(LOCK_FILE);
-      if (Date.now() - stat.mtimeMs < 60000) {
+      if (Date.now() - stat.mtimeMs < LOCK_STALE_MS) {
         return 'held';
       }
       fs.unlinkSync(LOCK_FILE);
@@ -84,20 +76,6 @@ function commonClaudePaths() {
     path.join(home, '.npm-global', 'bin', 'claude'),
     path.join(home, '.local', 'bin', 'claude'),
   ];
-}
-
-function resolveExePath(name) {
-  const cmd = process.platform === 'win32' ? 'where' : 'which';
-  try {
-    const result = execFileSync(cmd, [name], { encoding: 'utf-8', timeout: 5000 });
-    const paths = result.trim().split('\n').map(s => s.trim()).filter(Boolean);
-    if (process.platform === 'win32') {
-      const exe = paths.find(p => p.toLowerCase().endsWith('.exe'));
-      if (exe) return exe;
-    }
-    return paths[0] || name;
-  } catch {}
-  return name;
 }
 
 function loadConfig() {
@@ -158,8 +136,11 @@ function disableOnceTrigger(triggerId) {
   } catch {}
 }
 
+// Same cap as src/logger, so one noisy field cannot bloat ping.log.
+const MAX_LOG_FIELD_CHARS = 500;
+
 function sanitizeLog(s) {
-  return String(s).replace(/[\n\r]/g, ' ').replace(/"/g, "'");
+  return String(s).replace(/[\n\r]/g, ' ').replace(/"/g, "'").slice(0, MAX_LOG_FIELD_CHARS);
 }
 
 // --- Retry helpers ---
@@ -245,47 +226,6 @@ async function scheduleRetryTask(triggerId, retryTime, nextRetryIndex, originalT
   await scheduleOneOff(retryTaskId(triggerId, nextRetryIndex), retryTime, command);
 }
 
-// --- Limit detection ---
-
-const MONTH_NAMES = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
-
-function detectLimitHit(response) {
-  if (!response) return null;
-  const lower = response.toLowerCase();
-  if (lower.includes('monthly spend limit') || lower.includes('monthly limit')) {
-    return { type: 'monthly', retryable: false };
-  }
-  if (lower.includes('weekly limit')) {
-    return { type: 'weekly', retryable: true };
-  }
-  if (lower.includes('daily limit')) {
-    return { type: 'daily', retryable: true };
-  }
-  if (/(?:hit|reached|exceeded)\b.*\blimit\b|\blimit\b.*\b(?:hit|reached|exceeded)\b/i.test(response)) {
-    return { type: 'unknown', retryable: true };
-  }
-  return null;
-}
-
-function parseResetTime(response) {
-  if (!response) return null;
-  const match = response.match(/resets?\s+(\w+)\s+(\d{1,2}),?\s*(\d{1,2}):(\d{2})\s*(am|pm)/i);
-  if (!match) return null;
-  const [, monthStr, dayStr, hourStr, minuteStr, ampm] = match;
-  const month = MONTH_NAMES[monthStr.toLowerCase().slice(0, 3)];
-  if (month === undefined) return null;
-  let hour = parseInt(hourStr, 10);
-  const minute = parseInt(minuteStr, 10);
-  if (ampm.toLowerCase() === 'pm' && hour !== 12) hour += 12;
-  if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0;
-  const now = new Date();
-  const resetDate = new Date(now.getFullYear(), month, parseInt(dayStr, 10), hour, minute, 0);
-  if (resetDate.getTime() < now.getTime() - 24 * 60 * 60 * 1000) {
-    resetDate.setFullYear(resetDate.getFullYear() + 1);
-  }
-  return resetDate;
-}
-
 function formatDateStr(date) {
   const pad = (n) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -311,7 +251,7 @@ async function handleLimitRetry(triggerId, limitType, resetTime, isLimitRetry) {
 
   const now = new Date();
   if (resetTime.getTime() <= now.getTime()) {
-    log(`RETRY trigger=${triggerId} status=skip detail="${limitType} limit — reset time already passed (${formatLocalTime(resetTime)})"`);
+    log(`RETRY trigger=${triggerId} status=skip detail="${limitType} limit — reset time already passed (${formatLocalDateTime(resetTime)})"`);
     return;
   }
 
@@ -324,13 +264,13 @@ async function handleLimitRetry(triggerId, limitType, resetTime, isLimitRetry) {
     const resetDateStr = formatDateStr(resetTime);
     const today = todayDateStr();
     if (resetDateStr !== today || resetMinutes >= slotEndMinutes) {
-      log(`RETRY trigger=${triggerId} status=skip detail="${limitType} limit — reset at ${formatLocalTime(resetTime)} is outside shift window (ends ${trigger.smartMeta.targetSlotEnd})"`);
+      log(`RETRY trigger=${triggerId} status=skip detail="${limitType} limit — reset at ${formatLocalDateTime(resetTime)} is outside shift window (ends ${trigger.smartMeta.targetSlotEnd})"`);
       return;
     }
   } else {
     const resetDateStr = formatDateStr(resetTime);
     if (resetDateStr !== todayDateStr()) {
-      log(`RETRY trigger=${triggerId} status=skip detail="${limitType} limit — reset is on a future date (${formatLocalTime(resetTime)})"`);
+      log(`RETRY trigger=${triggerId} status=skip detail="${limitType} limit — reset is on a future date (${formatLocalDateTime(resetTime)})"`);
       return;
     }
   }
@@ -355,7 +295,7 @@ async function handleLimitRetry(triggerId, limitType, resetTime, isLimitRetry) {
     log(`RETRY trigger=${triggerId} status=error detail="failed to schedule limit retry: ${sanitizeLog(errMsg)}"`);
     return;
   }
-  log(`RETRY trigger=${triggerId} status=scheduled detail="${limitType} limit — retry at ${retryTime} (resets ${formatLocalTime(resetTime)})"`);
+  log(`RETRY trigger=${triggerId} status=scheduled detail="${limitType} limit — retry at ${retryTime} (resets ${formatLocalDateTime(resetTime)})"`);
 }
 
 // Schedulers fire on whole minutes; two minutes of lead keeps a retry created at hh:mm:59 in the future.
@@ -456,7 +396,6 @@ async function main() {
   await removeFinishedRetryTasks(triggerId, ownTaskId);
 
   try {
-    const pty = await import('@lydell/node-pty');
     const config = loadConfig();
 
     // ponytail: skip disabled/removed triggers — prevents yearly repeat on cron/launchd
@@ -481,115 +420,20 @@ async function main() {
       log(`PING trigger=${triggerId} status=warn detail="Claude not found via PATH or common locations. Fix with: claude-shift config set claudePath /absolute/path/to/claude"`);
     }
 
-    let done = false;
-    const target = ptySpawnTarget(claudePath);
-    const proc = pty.spawn(target.file, target.args, {
-      name: 'xterm-256color',
-      cols: PTY_COLS,
-      rows: PTY_ROWS,
-      cwd: pingCwd,
-    });
+    const result = await executePing(claudePath, message, pingCwd);
+    const { status, detail, response } = pingLogEntry(result);
+    const respPart = response ? ` response="${sanitizeLog(response)}"` : '';
+    log(`PING trigger=${triggerId}${retryLabel} status=${status} detail="${sanitizeLog(detail)}"${respPart}`);
 
-    let output = '';
-    let sentMessage = false;
-    let trustSeen = false;
-    let readyTimer = null;
-
-    function stripAnsi(s) {
-      return s.replace(ANSI_RE, '');
-    }
-
-    const responseText = async () => {
-      if (!sentMessage) return '';
-      try { return await extractResponse(output, message); } catch { return ''; }
-    };
-
-    const timeout = setTimeout(async () => {
-      if (done) return;
-      done = true;
-      try { proc.kill(); } catch {}
-      const duration = Date.now() - start;
-      const resp = await responseText();
-      const respPart = resp ? ` response="${sanitizeLog(resp)}"` : '';
-      const limit = detectLimitHit(resp);
-      if (limit) {
-        const resetTime = limit.retryable ? parseResetTime(resp) : null;
-        const resetDetail = resetTime ? ` resets=${formatLocalTime(resetTime)}` : '';
-        log(`PING trigger=${triggerId}${retryLabel} status=limit-${limit.type} detail="timeout after ${duration}ms${resetDetail}"${respPart}`);
-        await handleLimitRetry(triggerId, limit.type, resetTime, isLimitRetry);
-        releaseLock();
-        process.exit(1);
-        return;
-      }
-      log(`PING trigger=${triggerId}${retryLabel} status=success detail="timeout after ${duration}ms — session was started"${respPart}`);
+    if (result.limitType) {
+      await handleLimitRetry(triggerId, result.limitType, result.resetTime, isLimitRetry);
+    } else if (result.success) {
       disableOnceTrigger(triggerId);
-      releaseLock();
-      process.exit(0);
-    }, 60000);
-
-    function scheduleMessage(delayMs) {
-      if (readyTimer || sentMessage || done) return;
-      readyTimer = setTimeout(() => {
-        if (done || sentMessage) return;
-        sentMessage = true;
-        proc.write(message + '\r');
-        setTimeout(() => {
-          if (done) return;
-          proc.write('/exit\r');
-        }, 12000);
-      }, delayMs);
+    } else {
+      await handleRetry(triggerId, isRetry, retryIndex, originalTime);
     }
-
-    proc.onData((data) => {
-      if (output.length > 1_000_000) return;
-      output += data;
-      const clean = stripAnsi(output);
-
-      if (!trustSeen && TRUST_RE.test(clean)) {
-        trustSeen = true;
-        if (readyTimer) { clearTimeout(readyTimer); readyTimer = null; }
-        setTimeout(() => {
-          if (done) return;
-          proc.write(trustDialogKeys(stripAnsi(output)));
-          scheduleMessage(5000);
-        }, 500);
-        return;
-      }
-
-      if (!trustSeen && !sentMessage && clean.length > 200) {
-        scheduleMessage(5000);
-      }
-    });
-
-    proc.onExit(async ({ exitCode }) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timeout);
-      const duration = Date.now() - start;
-      const ok = exitCode === 0 || exitCode === null;
-      const resp = await responseText();
-      const respPart = resp ? ` response="${sanitizeLog(resp)}"` : '';
-
-      if (ok) {
-        const limit = detectLimitHit(resp);
-        if (limit) {
-          const resetTime = limit.retryable ? parseResetTime(resp) : null;
-          const resetDetail = resetTime ? ` resets=${formatLocalTime(resetTime)}` : '';
-          log(`PING trigger=${triggerId}${retryLabel} status=limit-${limit.type} detail="exit=${exitCode} duration=${duration}ms${resetDetail}"${respPart}`);
-          await handleLimitRetry(triggerId, limit.type, resetTime, isLimitRetry);
-          releaseLock();
-          process.exit(1);
-          return;
-        }
-        log(`PING trigger=${triggerId}${retryLabel} status=success detail="exit=${exitCode} duration=${duration}ms"${respPart}`);
-        disableOnceTrigger(triggerId);
-      } else {
-        log(`PING trigger=${triggerId}${retryLabel} status=error detail="exit=${exitCode} duration=${duration}ms"${respPart}`);
-        await handleRetry(triggerId, isRetry, retryIndex, originalTime);
-      }
-      releaseLock();
-      process.exit(ok ? 0 : 1);
-    });
+    releaseLock();
+    process.exit(result.success ? 0 : 1);
   } catch (err) {
     const duration = Date.now() - start;
     const errMsg = err instanceof Error ? err.message : String(err);
